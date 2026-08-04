@@ -1,0 +1,44 @@
+[project]
+name = "ht-manager"
+version = "0.1.0"
+description = "HackerTroupe CTF Discord bot and API"
+requires-python = ">=3.13"
+dependencies = [
+    "discord.py>=2.4,<3",
+    "sqlalchemy[asyncio]>=2.0,<3",
+    "asyncpg>=0.29,<1",
+    "alembic>=1.13,<2",
+    "httpx>=0.27,<1",
+    "apscheduler>=3.10,<4",
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "pydantic-settings>=2.4,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.6,<1",
+    "pytest>=8,<9",
+    "pytest-asyncio>=0.24,<1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
