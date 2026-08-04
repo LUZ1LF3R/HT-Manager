@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from ht_manager.config import SettingsError, get_settings
@@ -37,3 +39,22 @@ def test_settings_missing_required_raises_actionable_error(monkeypatch, tmp_path
         get_settings()
 
     assert ".env.example" in str(exc_info.value)
+
+
+def test_settings_loads_from_dotenv_file(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    # Clear environment variables to ensure .env file is the source
+    for key in REQUIRED_ENV:
+        monkeypatch.delenv(key, raising=False)
+
+    # Write a real .env file
+    env_content = "\n".join(f"{k}={v}" for k, v in REQUIRED_ENV.items())
+    Path(".env").write_text(env_content)
+
+    settings = get_settings()
+
+    assert settings.discord_token == "fake-token"
+    assert settings.discord_guild_id == 123456789
+    assert settings.admin_role_ids == [1, 2, 3]
+    assert settings.ctf_resource_retention_days == 60
+    assert settings.public_api_origins == []

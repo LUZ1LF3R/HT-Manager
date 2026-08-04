@@ -1,24 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic_settings.sources import EnvSettingsSource
+from pydantic_settings.sources import NoDecode
 
 
 class SettingsError(Exception):
     """Raised when required configuration is missing or invalid."""
-
-
-class _CustomEnvSettings(EnvSettingsSource):
-    """Custom env settings source that doesn't JSON-parse comma-separated lists."""
-
-    def decode_complex_value(self, field_name: str, field, value: str) -> Any:
-        # For certain fields, don't use JSON decoding; let field validators handle parsing
-        if field_name in ("admin_role_ids", "public_api_origins"):
-            return value
-        return super().decode_complex_value(field_name, field, value)
 
 
 class Settings(BaseSettings):
@@ -30,28 +20,12 @@ class Settings(BaseSettings):
     ctftime_team_id: str
     results_channel_id: int
     ctf_forum_channel_id: int
-    admin_role_ids: list[int]
+    admin_role_ids: Annotated[list[int], NoDecode]
     member_role_id: int | None = None
     bot_log_channel_id: int | None = None
     ctf_resource_retention_days: int = 60
-    public_api_origins: list[str] = []
+    public_api_origins: Annotated[list[str], NoDecode] = []
     log_level: str = "INFO"
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls,
-        init_settings,
-        env_settings,
-        dotenv_settings,
-        file_secret_settings,
-    ):
-        return (
-            init_settings,
-            _CustomEnvSettings(settings_cls),
-            dotenv_settings,
-            file_secret_settings,
-        )
 
     @field_validator("admin_role_ids", mode="before")
     @classmethod
