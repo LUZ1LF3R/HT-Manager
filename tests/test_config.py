@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pytest import MonkeyPatch
 
 from ht_manager.config import SettingsError, get_settings
 
@@ -15,7 +16,7 @@ REQUIRED_ENV = {
 }
 
 
-def test_settings_loads_from_env(monkeypatch, tmp_path):
+def test_settings_loads_from_env(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     for key, value in REQUIRED_ENV.items():
         monkeypatch.setenv(key, value)
@@ -29,7 +30,9 @@ def test_settings_loads_from_env(monkeypatch, tmp_path):
     assert settings.public_api_origins == []
 
 
-def test_settings_missing_required_raises_actionable_error(monkeypatch, tmp_path):
+def test_settings_missing_required_raises_actionable_error(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.chdir(tmp_path)
     for key in REQUIRED_ENV:
         monkeypatch.delenv(key, raising=False)
@@ -41,7 +44,19 @@ def test_settings_missing_required_raises_actionable_error(monkeypatch, tmp_path
     assert ".env.example" in str(exc_info.value)
 
 
-def test_settings_loads_from_dotenv_file(monkeypatch, tmp_path):
+def test_settings_empty_admin_role_ids_raises_error(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    for key, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("ADMIN_ROLE_IDS", "")
+
+    with pytest.raises(SettingsError):
+        get_settings()
+
+
+def test_settings_loads_from_dotenv_file(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     # Clear environment variables to ensure .env file is the source
     for key in REQUIRED_ENV:

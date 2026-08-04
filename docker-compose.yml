@@ -15,23 +15,41 @@ services:
       timeout: 5s
       retries: 5
 
+  ht-manager-migrate:
+    build: .
+    command: alembic upgrade head
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ht_manager:ht_manager@postgres:5432/ht_manager
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   ht-manager-bot:
     build: .
     command: python -m ht_manager.main
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ht_manager:ht_manager@postgres:5432/ht_manager
     depends_on:
       postgres:
         condition: service_healthy
+      ht-manager-migrate:
+        condition: service_completed_successfully
 
   ht-manager-api:
     build: .
     command: uvicorn ht_manager.api.app:app --host 0.0.0.0 --port 8000
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://ht_manager:ht_manager@postgres:5432/ht_manager
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      ht-manager-migrate:
+        condition: service_completed_successfully
 
 volumes:
   ht_manager_postgres_data:

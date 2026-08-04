@@ -1,6 +1,8 @@
 import os
+from collections.abc import AsyncIterator
 
 import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ht_manager.db.session import create_engine, create_session_factory
 
@@ -11,7 +13,7 @@ TEST_DATABASE_URL = os.environ.get(
 
 
 @pytest_asyncio.fixture
-async def db_session():
+async def db_session() -> AsyncIterator[AsyncSession]:
     engine = create_engine(TEST_DATABASE_URL)
     session_factory = create_session_factory(engine)
     async with session_factory() as session:

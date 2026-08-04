@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from ht_manager.api.app import create_app
 
 
-def test_health_returns_ok():
+def test_health_returns_ok() -> None:
     client = TestClient(create_app())
 
     response = client.get("/health")

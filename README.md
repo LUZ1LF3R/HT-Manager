@@ -12,7 +12,7 @@ Full design: `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
    token, guild ID, channel/role IDs, CTFTime team ID). Never commit `.env`.
 2. Start Postgres:
    ```bash
-   docker compose up -d postgres
+   docker compose up -d --wait postgres
    ```
 3. Install dependencies:
    ```bash

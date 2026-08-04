@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic_settings.sources import NoDecode
 
@@ -14,13 +14,13 @@ class SettingsError(Exception):
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    discord_token: str
+    discord_token: str = Field(min_length=1)
     discord_guild_id: int
-    database_url: str
-    ctftime_team_id: str
+    database_url: str = Field(min_length=1)
+    ctftime_team_id: str = Field(min_length=1)
     results_channel_id: int
     ctf_forum_channel_id: int
-    admin_role_ids: Annotated[list[int], NoDecode]
+    admin_role_ids: Annotated[list[int], NoDecode] = Field(min_length=1)
     member_role_id: int | None = None
     bot_log_channel_id: int | None = None
     ctf_resource_retention_days: int = 60
