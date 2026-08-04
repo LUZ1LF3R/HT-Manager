@@ -10,9 +10,11 @@ Full design: `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 1. Copy `.env.example` to `.env` and fill in real values (Discord bot
    token, guild ID, channel/role IDs, CTFTime team ID). Never commit `.env`.
-2. Start Postgres:
+2. Start Postgres and create the app + test databases (the second command is
+   safe to re-run; ignore "already exists" if it prints):
    ```bash
    docker compose up -d --wait postgres
+   docker compose exec postgres createdb -U ht_manager ht_manager_test
    ```
 3. Install dependencies:
    ```bash
@@ -23,7 +25,9 @@ Full design: `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
    export DATABASE_URL=postgresql+asyncpg://ht_manager:ht_manager@localhost:5432/ht_manager
    alembic upgrade head
    ```
-5. Run tests and lint:
+5. Run tests and lint. Tests run against a separate `ht_manager_test`
+   database (see step 2) and migrate it automatically; override the target
+   with `TEST_DATABASE_URL` if needed.
    ```bash
    pytest
    ruff check .
@@ -34,7 +38,7 @@ Full design: `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
    ```
 7. Run the API:
    ```bash
-   uvicorn ht_manager.api.app:app --reload
+   uvicorn ht_manager.api.app:create_app --factory --reload
    ```
 
 Or run everything through Compose once `.env` is filled in:
@@ -45,5 +49,7 @@ docker compose up --build
 
 ## Project status
 
-M0 (Foundation) complete: config loading, Postgres + Alembic, bot login,
-`/ping`, `/health`, CI. See the spec's milestone table (§25) for what's next.
+M0 (Foundation) and M0.1/M0.2 (Foundation Hardening) complete: config
+loading, Postgres + Alembic, bot login, `/ping`, `/health`, CI, DB session
+wiring, isolated test database. See `CHANGELOG.md` for details and the
+spec's milestone table (§25) for what's next.

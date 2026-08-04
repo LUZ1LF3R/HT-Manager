@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: ht_manager
-      POSTGRES_PASSWORD: ht_manager
-      POSTGRES_DB: ht_manager
+      POSTGRES_USER: ${POSTGRES_USER:-ht_manager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ht_manager}
+      POSTGRES_DB: ${POSTGRES_DB:-ht_manager}
     ports:
       - "5432:5432"
     volumes:
       - ht_manager_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ht_manager"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ht_manager}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -20,7 +20,7 @@ services:
     command: alembic upgrade head
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://ht_manager:ht_manager@postgres:5432/ht_manager
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ht_manager}:${POSTGRES_PASSWORD:-ht_manager}@postgres:5432/${POSTGRES_DB:-ht_manager}
     depends_on:
       postgres:
         condition: service_healthy
@@ -30,7 +30,7 @@ services:
     command: python -m ht_manager.main
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://ht_manager:ht_manager@postgres:5432/ht_manager
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ht_manager}:${POSTGRES_PASSWORD:-ht_manager}@postgres:5432/${POSTGRES_DB:-ht_manager}
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,10 +39,10 @@ services:
 
   ht-manager-api:
     build: .
-    command: uvicorn ht_manager.api.app:app --host 0.0.0.0 --port 8000
+    command: uvicorn ht_manager.api.app:create_app --factory --host 0.0.0.0 --port 8000
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://ht_manager:ht_manager@postgres:5432/ht_manager
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ht_manager}:${POSTGRES_PASSWORD:-ht_manager}@postgres:5432/${POSTGRES_DB:-ht_manager}
     ports:
       - "8000:8000"
     depends_on:

@@ -17,4 +17,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Baseline carries no schema; both directions are intentionally no-ops.
     pass

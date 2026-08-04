@@ -1,12 +1,8 @@
-from fastapi.testclient import TestClient
-
-from ht_manager.api.app import create_app
+import httpx
 
 
-def test_health_returns_ok() -> None:
-    client = TestClient(create_app())
-
-    response = client.get("/health")
+async def test_health_returns_ok(api_client: httpx.AsyncClient) -> None:
+    response = await api_client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
