@@ -5,6 +5,24 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### M6 — End Summary
+
+- Added `ctf_category_stats` table (migration `0006`): `CTFCategoryStat`
+  (unique per `ctf_id`/`category_name`, `solved`/`total`), populated by
+  admins via `/setcategory` — CTFTime's API has no per-category breakdown,
+  so this is manual-only, unlike `results`.
+- `services/summary.py`: `set_category_stat()` upserts a category row
+  (audited); `finish_ctf()` transitions a CTF `ACTIVE` → `FINISHED` via
+  `ctfs_service.transition()` (so an invalid-state call fails the same way
+  every other transition does) and returns `render_summary()`'s text;
+  `render_summary()` composes name/status, placement/score (from
+  `results`, if any), a per-category solves breakdown with a total (only
+  when stats exist), and a participant count (from `participations`).
+- New commands: `/setcategory` (validates `0 <= solved <= total`),
+  `/endctf` (finishes a CTF and posts its summary in a code block). Also
+  added `/archivectf` (`FINISHED` → `ARCHIVED`) and `/deletectf` — M1 built
+  `delete_draft()` but never exposed it as a command; this closes that gap.
+
 ### M5 — Results
 
 - Added `results` and `sync_state` tables (migration `0005`): `Result` is

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from ht_manager.db.models.audit_log import AuditLog  # noqa: F401
 from ht_manager.db.models.ctf import CTF, CTFStatus  # noqa: F401
+from ht_manager.db.models.ctf_category_stat import CTFCategoryStat  # noqa: F401
 from ht_manager.db.models.ctf_discord_resource import CTFDiscordResource  # noqa: F401
 from ht_manager.db.models.participation import Participation, ParticipationSource  # noqa: F401
 from ht_manager.db.models.poll import Poll, PollOption, PollStatus, PollVote  # noqa: F401
@@ -25,6 +26,7 @@ __all__: list[str] = [
     "CTF",
     "CTFStatus",
     "AuditLog",
+    "CTFCategoryStat",
     "CTFDiscordResource",
     "Participation",
     "ParticipationSource",
