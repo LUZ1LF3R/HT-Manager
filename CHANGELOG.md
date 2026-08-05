@@ -5,6 +5,26 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### M1 — CTF Data
+
+- Added `ctfs` and `audit_log` tables (migration `0002`): `CTF` model with
+  the `CTFStatus` lifecycle enum (spec §15) stored as a native Postgres
+  enum, and an append-only `AuditLog` model (spec §14.2).
+- `services/ctfs.py`: draft creation, metadata updates, draft-only hard
+  delete (spec §14.3 — only `DRAFT` CTFs have no history to protect), and
+  `transition()` enforcing the exact transition table from spec §15.1 —
+  anything not explicitly listed there is rejected. Every mutation writes
+  an `audit_log` row with a before/after snapshot of the changed fields.
+- `services/ctftime.py`: an isolated `CTFTimeClient` (spec §10) wrapping
+  CTFTime's `/events/{id}/` endpoint, with timeout, bounded retries with
+  backoff on transport errors/5xx, and parsing covered by fixture-based
+  tests so future CTFTime API drift is caught in one place.
+- `/addctf` and `/editctf` admin commands, thin translation layers over
+  `services/ctfs.py` per the command-handler convention established in M0.1.
+- `db/repositories/ctfs.py` and `db/repositories/audit_log.py` for the new
+  tables, following the existing repository/service/transaction-ownership
+  split.
+
 ### M0.3 — Foundation Hardening, round 3
 
 Fix wave addressing the one Critical/blocking finding from the M0.2

@@ -13,4 +13,7 @@ Example, once M1 adds a model:
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from ht_manager.db.models.audit_log import AuditLog  # noqa: F401
+from ht_manager.db.models.ctf import CTF, CTFStatus  # noqa: F401
+
+__all__: list[str] = ["CTF", "CTFStatus", "AuditLog"]
