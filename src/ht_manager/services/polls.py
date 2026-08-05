@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -308,6 +308,7 @@ async def setup_ctf_resources(
     ctf_id: int,
     guild_id: int,
     forum_channel_id: int,
+    retention_days: int = 60,
 ) -> None:
     """The winner-resolution sequence (spec §15.2), triggered once by either
     a clean poll win or `/resolvepoll`. Each step commits independently and
@@ -333,6 +334,7 @@ async def setup_ctf_resources(
         thread_id = await discord_resources.create_workspace(
             bot, guild_id=guild_id, forum_channel_id=forum_channel_id, ctf_name=ctf.name
         )
+        cleanup_after = datetime.now(UTC) + timedelta(days=retention_days)
         async with session_factory() as session, session.begin():
             resource = await resources_repo.get_by_ctf_id(session, ctf_id)
             if resource is None:
@@ -343,12 +345,14 @@ async def setup_ctf_resources(
                         role_id=role_id,
                         forum_channel_id=forum_channel_id,
                         thread_id=thread_id,
+                        cleanup_after=cleanup_after,
                     ),
                 )
             else:
                 resource.role_id = role_id
                 resource.forum_channel_id = forum_channel_id
                 resource.thread_id = thread_id
+                resource.cleanup_after = cleanup_after
     else:
         role_id = resource.role_id
 

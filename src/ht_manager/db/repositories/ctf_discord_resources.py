@@ -19,6 +19,11 @@ async def get_by_ctf_id(session: AsyncSession, ctf_id: int) -> CTFDiscordResourc
     return result.scalar_one_or_none()
 
 
+async def mark_cleaned(session: AsyncSession, resource: CTFDiscordResource, now) -> None:
+    resource.cleaned_at = now
+    await session.flush()
+
+
 async def list_due_for_cleanup(session: AsyncSession, now) -> list[CTFDiscordResource]:
     result = await session.execute(
         select(CTFDiscordResource).where(

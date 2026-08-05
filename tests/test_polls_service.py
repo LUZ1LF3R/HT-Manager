@@ -202,6 +202,7 @@ async def test_setup_ctf_resources_creates_role_workspace_and_participation(
         ctf_id=ctf_a,
         guild_id=1,
         forum_channel_id=2,
+        retention_days=30,
     )
 
     assert calls["assigned"] == (555, [10, 11])
@@ -212,6 +213,9 @@ async def test_setup_ctf_resources_creates_role_workspace_and_participation(
         assert resource is not None
         assert resource.role_id == 555
         assert resource.thread_id == 777
+        assert resource.cleanup_after is not None
+        expected = datetime.now(UTC) + timedelta(days=30)
+        assert abs((resource.cleanup_after - expected).total_seconds()) < 60
 
 
 async def test_setup_ctf_resources_is_idempotent_once_active(

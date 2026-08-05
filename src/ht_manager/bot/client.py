@@ -19,11 +19,13 @@ from ht_manager.bot.commands.removectfmember import register_removectfmember_com
 from ht_manager.bot.commands.resolvepoll import register_resolvepoll_command
 from ht_manager.bot.commands.setupctf import register_setupctf_command
 from ht_manager.config import Settings
+from ht_manager.jobs.cleanup import cleanup_expired_resources
 from ht_manager.jobs.poll_close import close_expired_polls
 
 logger = logging.getLogger(__name__)
 
 POLL_CLOSE_CHECK_INTERVAL_MINUTES = 5
+CLEANUP_CHECK_INTERVAL_HOURS = 24
 
 
 class HTManagerBot(commands.Bot):
@@ -60,6 +62,13 @@ class HTManagerBot(commands.Bot):
             minutes=POLL_CLOSE_CHECK_INTERVAL_MINUTES,
             args=[self, self.session_factory],
             id="close_expired_polls",
+        )
+        self.scheduler.add_job(
+            cleanup_expired_resources,
+            "interval",
+            hours=CLEANUP_CHECK_INTERVAL_HOURS,
+            args=[self, self.session_factory],
+            id="cleanup_expired_resources",
         )
         self.scheduler.start()
 

@@ -5,6 +5,18 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### M4 — Cleanup
+
+- `setup_ctf_resources()` now stamps `cleanup_after` (`created_at +
+  CTF_RESOURCE_RETENTION_DAYS`) on a `ctf_discord_resources` row the first
+  time it's created.
+- `jobs/cleanup.py`: a daily APScheduler job that deletes the role and
+  archives the workspace thread for any resource past `cleanup_after`,
+  then stamps `cleaned_at` — never touches `ctfs`/`participations` (spec
+  §14.3, §8). Idempotent: `list_due_for_cleanup` excludes anything already
+  `cleaned_at`, and a per-resource Discord failure is logged and skipped
+  (retried on the next run) rather than aborting the whole batch.
+
 ### M3 — Event Setup
 
 - Added `participations` and `ctf_discord_resources` tables (migration
