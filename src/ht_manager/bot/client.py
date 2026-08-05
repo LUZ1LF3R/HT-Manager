@@ -10,22 +10,27 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ht_manager.bot.commands.addctf import register_addctf_command
 from ht_manager.bot.commands.addctfmember import register_addctfmember_command
+from ht_manager.bot.commands.addresult import register_addresult_command
 from ht_manager.bot.commands.ctfmembers import register_ctfmembers_command
 from ht_manager.bot.commands.editctf import register_editctf_command
+from ht_manager.bot.commands.editresult import register_editresult_command
 from ht_manager.bot.commands.nextctf import register_nextctf_command
 from ht_manager.bot.commands.participation import register_participation_command
 from ht_manager.bot.commands.ping import register_ping_command
 from ht_manager.bot.commands.removectfmember import register_removectfmember_command
 from ht_manager.bot.commands.resolvepoll import register_resolvepoll_command
+from ht_manager.bot.commands.resultsync import register_resultsync_command
 from ht_manager.bot.commands.setupctf import register_setupctf_command
 from ht_manager.config import Settings
 from ht_manager.jobs.cleanup import cleanup_expired_resources
 from ht_manager.jobs.poll_close import close_expired_polls
+from ht_manager.jobs.result_sync import sync_results
 
 logger = logging.getLogger(__name__)
 
 POLL_CLOSE_CHECK_INTERVAL_MINUTES = 5
 CLEANUP_CHECK_INTERVAL_HOURS = 24
+RESULT_SYNC_INTERVAL_HOURS = 12
 
 
 class HTManagerBot(commands.Bot):
@@ -51,6 +56,9 @@ class HTManagerBot(commands.Bot):
         register_addctfmember_command(self)
         register_removectfmember_command(self)
         register_participation_command(self)
+        register_addresult_command(self)
+        register_editresult_command(self)
+        register_resultsync_command(self)
         self.tree.on_error = self._on_app_command_error
         guild = discord.Object(id=self.settings.discord_guild_id)
         self.tree.copy_global_to(guild=guild)
@@ -69,6 +77,13 @@ class HTManagerBot(commands.Bot):
             hours=CLEANUP_CHECK_INTERVAL_HOURS,
             args=[self, self.session_factory],
             id="cleanup_expired_resources",
+        )
+        self.scheduler.add_job(
+            sync_results,
+            "interval",
+            hours=RESULT_SYNC_INTERVAL_HOURS,
+            args=[self, self.session_factory],
+            id="sync_results",
         )
         self.scheduler.start()
 

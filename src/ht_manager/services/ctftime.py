@@ -21,6 +21,13 @@ class CTFTimeError(Exception):
 
 
 @dataclass(frozen=True)
+class CTFTimeTeamResult:
+    place: int
+    points: float | None
+    team_id: int
+
+
+@dataclass(frozen=True)
 class CTFTimeEvent:
     ctftime_event_id: int
     name: str
@@ -93,6 +100,22 @@ class CTFTimeClient:
             return []
         response.raise_for_status()
         return [_parse_event(item) for item in response.json()]
+
+    async def get_event_results(self, ctftime_event_id: int) -> list[CTFTimeTeamResult]:
+        """Full standings for one event — used to find our own team's
+        placement (spec §10) since CTFTime's public API doesn't expose a
+        "results for team X across all events" endpoint."""
+        response = await self._get_with_retries(f"/events/{ctftime_event_id}/results/")
+        if response is None or response.status_code == 404:
+            return []
+        response.raise_for_status()
+        standings = response.json().get("standings", [])
+        return [
+            CTFTimeTeamResult(
+                place=entry["place"], points=entry.get("points"), team_id=entry["team_id"]
+            )
+            for entry in standings
+        ]
 
     async def _get_with_retries(
         self, path: str, *, params: dict[str, object] | None = None

@@ -63,6 +63,34 @@ async def test_get_event_retries_then_raises_on_persistent_5xx() -> None:
     assert attempts == 2
 
 
+async def test_get_event_results_parses_standings() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/events/42/results/"
+        return httpx.Response(
+            200,
+            json={
+                "standings": [
+                    {"place": 1, "team_id": 5, "team": "Winners", "points": 100.0},
+                    {"place": 2, "team_id": 999, "team": "HackerTroupe", "points": 80.0},
+                ]
+            },
+        )
+
+    client = _client(handler)
+    results = await client.get_event_results(42)
+    assert len(results) == 2
+    assert results[1].team_id == 999
+    assert results[1].place == 2
+
+
+async def test_get_event_results_returns_empty_on_404() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    client = _client(handler)
+    assert await client.get_event_results(1) == []
+
+
 async def test_list_upcoming_events_parses_all_results() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/events/"

@@ -18,6 +18,8 @@ from ht_manager.db.models.ctf import CTF, CTFStatus  # noqa: F401
 from ht_manager.db.models.ctf_discord_resource import CTFDiscordResource  # noqa: F401
 from ht_manager.db.models.participation import Participation, ParticipationSource  # noqa: F401
 from ht_manager.db.models.poll import Poll, PollOption, PollStatus, PollVote  # noqa: F401
+from ht_manager.db.models.result import Result, ResultSource  # noqa: F401
+from ht_manager.db.models.sync_state import SyncState  # noqa: F401
 
 __all__: list[str] = [
     "CTF",
@@ -30,4 +32,7 @@ __all__: list[str] = [
     "PollOption",
     "PollStatus",
     "PollVote",
+    "Result",
+    "ResultSource",
+    "SyncState",
 ]

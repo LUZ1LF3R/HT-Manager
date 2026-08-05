@@ -5,6 +5,28 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### M5 — Results
+
+- Added `results` and `sync_state` tables (migration `0005`): `Result` is
+  at most one row per CTF (`/editresult` corrects in place rather than
+  inserting a second row, spec §11), sourced `CTFTIME` or `MANUAL`.
+  `SyncState` tracks the CTFTime sync's last success/error.
+- `services/ctftime.py`: `get_event_results()` reads one event's full
+  standings — CTFTime's public API has no "results for team X across all
+  events" endpoint, so the sync instead checks each CTF we already track
+  (has a `ctftime_event_id`, already ran) against that event's standings
+  for our own `CTFTIME_TEAM_ID`.
+- `services/results.py`: `add_result`/`edit_result` for `/addresult` and
+  `/editresult` (audited), and `upsert_from_ctftime()` — reports
+  `changed=False` when placement/team-count/rating already match what's
+  stored, which is what stops the 12-hour sync from re-announcing
+  identical results on every run (spec §10).
+- `jobs/result_sync.py`: runs every 12 hours (also triggerable via
+  `/resultsync`), announces genuinely new/changed results to
+  `RESULTS_CHANNEL_ID`, and records success/failure in `sync_state`. A
+  single CTF's sync failure is logged and skipped rather than aborting
+  the run.
+
 ### M4 — Cleanup
 
 - `setup_ctf_resources()` now stamps `cleanup_after` (`created_at +
