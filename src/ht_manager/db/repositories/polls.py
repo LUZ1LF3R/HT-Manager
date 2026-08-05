@@ -52,3 +52,19 @@ async def list_expired_open(session: AsyncSession, now: datetime) -> list[Poll]:
         select(Poll).where(Poll.status == PollStatus.OPEN, Poll.closes_at <= now)
     )
     return list(result.scalars().all())
+
+
+async def list_voter_ids_for_ctf(session: AsyncSession, ctf_id: int) -> list[int]:
+    result = await session.execute(
+        select(PollVote.discord_user_id).where(PollVote.ctf_id == ctf_id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_poll_for_ctf(session: AsyncSession, ctf_id: int) -> Poll | None:
+    result = await session.execute(
+        select(Poll)
+        .join(PollOption, PollOption.poll_id == Poll.id)
+        .where(PollOption.ctf_id == ctf_id)
+    )
+    return result.scalars().first()

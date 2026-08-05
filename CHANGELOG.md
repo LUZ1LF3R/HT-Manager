@@ -5,6 +5,35 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### M3 — Event Setup
+
+- Added `participations` and `ctf_discord_resources` tables (migration
+  `0004`): `Participation` (unique per `ctf_id`/`discord_user_id`, sourced
+  `VOTE` or `MANUAL`) and `CTFDiscordResource` (role/forum/thread IDs, never
+  deleted — only `cleaned_at` marks Discord-side cleanup, spec §14.3).
+- `services/discord_resources.py`: the only module allowed to `import
+  discord` for role/forum operations (create/delete role, create workspace
+  thread, assign role). Per the spec's §8 implementation note, a shared
+  public forum can't restrict one post's visibility independently of the
+  others, so the workspace post is a normal visible-to-everyone thread —
+  the role exists for pinging/organization, not access control.
+- `services/polls.py`: `setup_ctf_resources()` implements the winner-
+  resolution sequence (spec §15.2) — create role/workspace, record
+  participation for the winning option's voters, assign the role, then
+  mark the CTF `ACTIVE`. Each step commits independently with no
+  transaction spanning a Discord call, and every step re-checks existing
+  state first, so a failure leaves the CTF at its last successful step and
+  a retry (`/setupctf`) is a safe no-op on already-completed steps.
+  `resolve_tie()` backs `/resolvepoll`: picks a winner among a `TIED`
+  poll's leaders, cancels the other leader(s), then the same setup runs.
+- `services/participation.py`: manual add/remove (audited) plus an
+  idempotent `record_from_vote()` for the automatic path.
+- New commands: `/resolvepoll`, `/setupctf`, `/ctfmembers`,
+  `/addctfmember`, `/removectfmember`, `/participation`.
+- `jobs/poll_close.py` now runs `setup_ctf_resources()` automatically after
+  a clean poll win, surfacing failures to `BOT_LOG_CHANNEL_ID` per spec
+  §18.1 instead of losing them.
+
 ### M2 — `/nextctf`
 
 - Added `polls`, `poll_options`, `poll_votes` tables (migration `0003`) and

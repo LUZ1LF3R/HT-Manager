@@ -5,11 +5,15 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ht_manager.db.models.ctf import CTFStatus
+from ht_manager.db.models.ctf_discord_resource import CTFDiscordResource
 from ht_manager.db.models.poll import Poll, PollOption, PollStatus, PollVote
 from ht_manager.db.repositories import audit_log as audit_log_repo
+from ht_manager.db.repositories import ctf_discord_resources as resources_repo
 from ht_manager.db.repositories import ctfs as ctfs_repo
 from ht_manager.db.repositories import polls as polls_repo
 from ht_manager.services import ctfs as ctfs_service
+from ht_manager.services import discord_resources
+from ht_manager.services import participation as participation_service
 
 # Discord native polls allow at most 10 answers; leave headroom.
 MAX_CANDIDATES = 8
@@ -256,3 +260,109 @@ async def _get_drafting_poll(session: AsyncSession, poll_id: int) -> Poll:
     if poll.status is not PollStatus.DRAFTING:
         raise InvalidPollStateError(f"Poll {poll_id} is {poll.status.value}, not drafting")
     return poll
+
+
+async def resolve_tie(session: AsyncSession, *, actor_discord_id: int, ctf_id: int) -> Poll:
+    """`/resolvepoll` (spec §16): an admin manually picks the winner among a
+    `TIED` poll's leaders. Losing leaders are cancelled, same as a clean win."""
+    ctf = await ctfs_repo.get(session, ctf_id)
+    if ctf is None:
+        raise ctfs_service.CTFNotFoundError(f"CTF {ctf_id} not found")
+    if ctf.status is not CTFStatus.TIED:
+        raise InvalidPollStateError(f"CTF {ctf_id} is {ctf.status.value}, not tied")
+
+    poll = await polls_repo.get_poll_for_ctf(session, ctf_id)
+    if poll is None or poll.status is not PollStatus.TIED:
+        raise PollNotFoundError(f"No tied poll found for CTF {ctf_id}")
+
+    options = await polls_repo.list_options(session, poll.id)
+    for option in options:
+        if option.ctf_id == ctf_id:
+            continue
+        await _cancel_candidate(session, actor_discord_id, option.ctf_id)
+
+    await ctfs_service.transition(
+        session, actor_discord_id=actor_discord_id, ctf=ctf, new_status=CTFStatus.SELECTED
+    )
+    poll.status = PollStatus.CLOSED
+    poll.winning_ctf_id = ctf_id
+    await session.flush()
+
+    await audit_log_repo.record(
+        session,
+        discord_user_id=actor_discord_id,
+        action="poll_tie_resolved",
+        target_table="polls",
+        target_id=poll.id,
+        before=None,
+        after={"winning_ctf_id": ctf_id},
+    )
+    return poll
+
+
+async def setup_ctf_resources(
+    session_factory,
+    *,
+    actor_discord_id: int,
+    bot,
+    ctf_id: int,
+    guild_id: int,
+    forum_channel_id: int,
+) -> None:
+    """The winner-resolution sequence (spec §15.2), triggered once by either
+    a clean poll win or `/resolvepoll`. Each step commits independently and
+    no transaction spans a Discord call, so on failure the CTF is left in
+    its last successfully-reached state — safe to retry via `/setupctf`
+    (every step below re-checks existing state before acting)."""
+    async with session_factory() as session:
+        ctf = await ctfs_repo.get(session, ctf_id)
+    if ctf is None:
+        raise ctfs_service.CTFNotFoundError(f"CTF {ctf_id} not found")
+    if ctf.status is CTFStatus.ACTIVE:
+        return
+    if ctf.status is not CTFStatus.SELECTED:
+        raise InvalidPollStateError(f"CTF {ctf_id} is {ctf.status.value}, not selected")
+
+    async with session_factory() as session:
+        resource = await resources_repo.get_by_ctf_id(session, ctf_id)
+
+    if resource is None or resource.role_id is None or resource.thread_id is None:
+        role_id = await discord_resources.create_role(
+            bot, guild_id=guild_id, name=f"{ctf.name} {ctf.year}"
+        )
+        thread_id = await discord_resources.create_workspace(
+            bot, guild_id=guild_id, forum_channel_id=forum_channel_id, ctf_name=ctf.name
+        )
+        async with session_factory() as session, session.begin():
+            resource = await resources_repo.get_by_ctf_id(session, ctf_id)
+            if resource is None:
+                await resources_repo.add(
+                    session,
+                    CTFDiscordResource(
+                        ctf_id=ctf_id,
+                        role_id=role_id,
+                        forum_channel_id=forum_channel_id,
+                        thread_id=thread_id,
+                    ),
+                )
+            else:
+                resource.role_id = role_id
+                resource.forum_channel_id = forum_channel_id
+                resource.thread_id = thread_id
+    else:
+        role_id = resource.role_id
+
+    async with session_factory() as session, session.begin():
+        voter_ids = await polls_repo.list_voter_ids_for_ctf(session, ctf_id)
+        for voter_id in voter_ids:
+            await participation_service.record_from_vote(
+                session, ctf_id=ctf_id, discord_user_id=voter_id
+            )
+
+    await discord_resources.assign_role(bot, guild_id=guild_id, role_id=role_id, user_ids=voter_ids)
+
+    async with session_factory() as session, session.begin():
+        ctf = await ctfs_repo.get(session, ctf_id)
+        await ctfs_service.transition(
+            session, actor_discord_id=actor_discord_id, ctf=ctf, new_status=CTFStatus.ACTIVE
+        )

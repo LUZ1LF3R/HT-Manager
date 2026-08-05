@@ -9,9 +9,15 @@ from discord.ext import commands
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ht_manager.bot.commands.addctf import register_addctf_command
+from ht_manager.bot.commands.addctfmember import register_addctfmember_command
+from ht_manager.bot.commands.ctfmembers import register_ctfmembers_command
 from ht_manager.bot.commands.editctf import register_editctf_command
 from ht_manager.bot.commands.nextctf import register_nextctf_command
+from ht_manager.bot.commands.participation import register_participation_command
 from ht_manager.bot.commands.ping import register_ping_command
+from ht_manager.bot.commands.removectfmember import register_removectfmember_command
+from ht_manager.bot.commands.resolvepoll import register_resolvepoll_command
+from ht_manager.bot.commands.setupctf import register_setupctf_command
 from ht_manager.config import Settings
 from ht_manager.jobs.poll_close import close_expired_polls
 
@@ -37,6 +43,12 @@ class HTManagerBot(commands.Bot):
         register_addctf_command(self)
         register_editctf_command(self)
         register_nextctf_command(self)
+        register_resolvepoll_command(self)
+        register_setupctf_command(self)
+        register_ctfmembers_command(self)
+        register_addctfmember_command(self)
+        register_removectfmember_command(self)
+        register_participation_command(self)
         self.tree.on_error = self._on_app_command_error
         guild = discord.Object(id=self.settings.discord_guild_id)
         self.tree.copy_global_to(guild=guild)
