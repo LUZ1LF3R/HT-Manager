@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 
@@ -59,6 +61,20 @@ async def test_get_event_retries_then_raises_on_persistent_5xx() -> None:
     with pytest.raises(CTFTimeError):
         await client.get_event(1)
     assert attempts == 2
+
+
+async def test_list_upcoming_events_parses_all_results() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/events/"
+        assert request.url.params["limit"] == "5"
+        return httpx.Response(200, json=[EVENT_PAYLOAD])
+
+    client = _client(handler)
+    events = await client.list_upcoming_events(
+        start=datetime(2026, 1, 1, tzinfo=UTC), finish=datetime(2026, 12, 31, tzinfo=UTC), limit=5
+    )
+    assert len(events) == 1
+    assert events[0].ctftime_event_id == 42
 
 
 async def test_get_event_recovers_after_transient_failure() -> None:

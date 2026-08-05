@@ -76,11 +76,31 @@ class CTFTimeClient:
         response.raise_for_status()
         return _parse_event(response.json())
 
-    async def _get_with_retries(self, path: str) -> httpx.Response | None:
+    async def list_upcoming_events(
+        self, *, start: datetime, finish: datetime, limit: int = 10
+    ) -> list[CTFTimeEvent]:
+        """Upcoming events in `[start, finish]`, per spec §7.1 step 3 — the
+        caller decides the curation window; this only fetches and parses."""
+        response = await self._get_with_retries(
+            "/events/",
+            params={
+                "limit": limit,
+                "start": int(start.timestamp()),
+                "finish": int(finish.timestamp()),
+            },
+        )
+        if response is None:
+            return []
+        response.raise_for_status()
+        return [_parse_event(item) for item in response.json()]
+
+    async def _get_with_retries(
+        self, path: str, *, params: dict[str, object] | None = None
+    ) -> httpx.Response | None:
         last_error: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             try:
-                response = await self._client.get(path)
+                response = await self._client.get(path, params=params)
             except httpx.TransportError as exc:
                 last_error = exc
                 logger.warning(

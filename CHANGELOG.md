@@ -5,6 +5,29 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### M2 — `/nextctf`
+
+- Added `polls`, `poll_options`, `poll_votes` tables (migration `0003`) and
+  the `Poll`/`PollOption`/`PollVote` models with a `PollStatus` lifecycle
+  (`DRAFTING` → `OPEN` → `CLOSED`/`TIED`/`CANCELLED`).
+- `services/polls.py`: draft a poll from candidate CTFs, add/remove
+  candidates pre-publish, publish (transitions every candidate `DRAFT` →
+  `POLLING`), and `finalize()` — tallies per-option voters, a single leader
+  wins (`SELECTED`, losers `CANCELLED`), a tie among leaders needs
+  `/resolvepoll` (`TIED`, spec §7.3), and zero total votes cancels every
+  candidate without creating a workspace. `finalize()` is idempotent: it
+  rejects a poll that isn't `OPEN`, so a retried/overlapping run is a no-op.
+- `services/ctftime.py`: added `list_upcoming_events()` for the curation
+  fetch (spec §7.1 step 3).
+- `/nextctf`: blocks if any CTF is already non-terminal (spec §7.1 step 2),
+  fetches upcoming CTFTime events, dedups against existing drafts by
+  `ctftime_event_id`, and shows a `discord.ui.View` (remove-candidate
+  select, Publish/Cancel buttons) before sending a native Discord poll.
+- `jobs/poll_close.py`: a 5-minute APScheduler job (wired in
+  `bot/client.py`'s `setup_hook`/`close`) that finalizes any `OPEN` poll
+  past `closes_at` by reading `PollAnswer.voters()` from the live Discord
+  message, then posts the outcome.
+
 ### Scope change — dropped the website API
 
 Removed `api/` (FastAPI app, `/health`, session dependency) and its tests,

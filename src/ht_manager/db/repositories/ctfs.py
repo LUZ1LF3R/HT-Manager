@@ -3,7 +3,14 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ht_manager.db.models.ctf import CTF
+from ht_manager.db.models.ctf import CTF, CTFStatus
+
+NON_TERMINAL_STATUSES = (
+    CTFStatus.POLLING,
+    CTFStatus.SELECTED,
+    CTFStatus.ACTIVE,
+    CTFStatus.TIED,
+)
 
 
 async def add(session: AsyncSession, ctf: CTF) -> CTF:
@@ -24,3 +31,8 @@ async def get_by_ctftime_event_id(session: AsyncSession, ctftime_event_id: int) 
 async def delete(session: AsyncSession, ctf: CTF) -> None:
     await session.delete(ctf)
     await session.flush()
+
+
+async def list_non_terminal(session: AsyncSession) -> list[CTF]:
+    result = await session.execute(select(CTF).where(CTF.status.in_(NON_TERMINAL_STATUSES)))
+    return list(result.scalars().all())

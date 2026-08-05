@@ -3,16 +3,21 @@ from __future__ import annotations
 import logging
 
 import discord
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from discord import app_commands
 from discord.ext import commands
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ht_manager.bot.commands.addctf import register_addctf_command
 from ht_manager.bot.commands.editctf import register_editctf_command
+from ht_manager.bot.commands.nextctf import register_nextctf_command
 from ht_manager.bot.commands.ping import register_ping_command
 from ht_manager.config import Settings
+from ht_manager.jobs.poll_close import close_expired_polls
 
 logger = logging.getLogger(__name__)
+
+POLL_CLOSE_CHECK_INTERVAL_MINUTES = 5
 
 
 class HTManagerBot(commands.Bot):
@@ -25,15 +30,30 @@ class HTManagerBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.settings = settings
         self.session_factory = session_factory
+        self.scheduler = AsyncIOScheduler()
 
     async def setup_hook(self) -> None:
         register_ping_command(self)
         register_addctf_command(self)
         register_editctf_command(self)
+        register_nextctf_command(self)
         self.tree.on_error = self._on_app_command_error
         guild = discord.Object(id=self.settings.discord_guild_id)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
+
+        self.scheduler.add_job(
+            close_expired_polls,
+            "interval",
+            minutes=POLL_CLOSE_CHECK_INTERVAL_MINUTES,
+            args=[self, self.session_factory],
+            id="close_expired_polls",
+        )
+        self.scheduler.start()
+
+    async def close(self) -> None:
+        self.scheduler.shutdown(wait=False)
+        await super().close()
 
     async def _on_app_command_error(
         self,

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ht_manager.db.models.ctf import CTF, CTFStatus
 from ht_manager.db.repositories import audit_log as audit_log_repo
 from ht_manager.db.repositories import ctfs as ctfs_repo
+from ht_manager.services.ctftime import CTFTimeEvent
 
 # Spec §15.1: transitions not listed here are invalid and must be rejected.
 ALLOWED_TRANSITIONS: dict[CTFStatus, set[CTFStatus]] = {
@@ -107,6 +108,28 @@ async def create_draft(
         after=_snapshot(ctf),
     )
     return ctf
+
+
+async def get_or_create_from_ctftime(
+    session: AsyncSession, *, actor_discord_id: int, event: CTFTimeEvent
+) -> CTF:
+    """Dedups on `ctftime_event_id` (spec §7.3) — re-fetching the same
+    upcoming event across `/nextctf` runs must not create duplicate drafts."""
+    existing = await ctfs_repo.get_by_ctftime_event_id(session, event.ctftime_event_id)
+    if existing is not None:
+        return existing
+    return await create_draft(
+        session,
+        actor_discord_id=actor_discord_id,
+        name=event.name,
+        year=event.start_at.year,
+        start_at=event.start_at,
+        end_at=event.end_at,
+        ctftime_event_id=event.ctftime_event_id,
+        ctftime_url=event.ctftime_url,
+        official_url=event.official_url,
+        weight=event.weight,
+    )
 
 
 async def update_ctf(
