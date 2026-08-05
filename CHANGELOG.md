@@ -5,6 +5,14 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### Scope change — dropped the website API
+
+Removed `api/` (FastAPI app, `/health`, session dependency) and its tests,
+the `ht-manager-api` Compose service, `fastapi`/`uvicorn` dependencies, and
+`PUBLIC_API_ORIGINS` config. The bot and hackertroupe.dev are independent —
+Feature G (spec §13, read-only API for the website) is out of scope; the
+bot no longer needs to coordinate schema/deployment with a public API.
+
 ### M1 — CTF Data
 
 - Added `ctfs` and `audit_log` tables (migration `0002`): `CTF` model with

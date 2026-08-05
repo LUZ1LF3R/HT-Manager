@@ -1,8 +1,7 @@
 # HT-Manager
 
-Discord bot and API for HackerTroupe's CTF operations: curating and polling
-the next CTF, tracking participation, syncing/announcing CTFTime results,
-and exposing structured data to hackertroupe.dev.
+Discord bot for HackerTroupe's CTF operations: curating and polling the next
+CTF, tracking participation, and syncing/announcing CTFTime results.
 
 Full design: `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
@@ -35,10 +34,6 @@ Full design: `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 6. Run the bot:
    ```bash
    python -m ht_manager.main
-   ```
-7. Run the API:
-   ```bash
-   uvicorn ht_manager.api.app:create_app --factory --reload
    ```
 
 Or run everything through Compose once `.env` is filled in:

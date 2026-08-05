@@ -7,8 +7,8 @@ testable without a live Discord connection, and they own writes to the
 `audit_log` table for any admin mutation they perform (spec §14.2).
 
 Transaction ownership: services and repositories never call `session.commit()`
-or `session.rollback()`. The caller — a command handler, a FastAPI route, or
-a scheduled job — owns the unit of work (`async with session.begin(): ...`)
+or `session.rollback()`. The caller — a command handler or a scheduled job —
+owns the unit of work (`async with session.begin(): ...`)
 and chooses its granularity.
 
 This is *not* one transaction per multi-step sequence. Spec §15.2's

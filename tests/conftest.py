@@ -3,16 +3,12 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 
-import httpx
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
-from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from ht_manager.api.app import create_app
-from ht_manager.api.dependencies import get_session
 from ht_manager.bot.client import HTManagerBot, build_bot
 from ht_manager.config import Settings
 from ht_manager.db.session import create_engine
@@ -90,49 +86,6 @@ def settings() -> Settings:
         member_role_id=None,
         bot_log_channel_id=None,
     )
-
-
-@pytest.fixture
-def api_app(settings: Settings, db_session_factory: async_sessionmaker[AsyncSession]) -> FastAPI:
-    """The FastAPI app with `get_session` AND `app.state.session_factory`
-    both pointed at the test's isolated, rolled-back session factory, so
-    both the documented DI path and any direct `request.app.state` access
-    stay isolated. Exposed separately from `api_client` so tests can add a
-    route to prove the override actually works end-to-end."""
-    app = create_app(settings)
-    app.state.session_factory = db_session_factory
-
-    async def _override_get_session() -> AsyncIterator[AsyncSession]:
-        async with db_session_factory() as session:
-            yield session
-
-    app.dependency_overrides[get_session] = _override_get_session
-    return app
-
-
-@pytest_asyncio.fixture
-async def api_client(
-    api_app: FastAPI, db_session_factory: async_sessionmaker[AsyncSession]
-) -> AsyncIterator[httpx.AsyncClient]:
-    """Uses httpx's ASGI transport directly rather than FastAPI's
-    (synchronous) TestClient: TestClient drives the app from a separate
-    thread with its own event loop, which breaks `api_app`'s session
-    override the moment a route actually awaits it — asyncpg connections
-    are bound to the loop that created them.
-
-    `ASGITransport` doesn't emit lifespan events, so `create_app()`'s
-    lifespan (which would overwrite `app.state.session_factory` with a real
-    engine) never runs here — that's *why* `api_app`'s pre-set isolated
-    factory survives. The assertion below guards that invariant: if a
-    future change wraps this in something that does run lifespan (e.g.
-    `asgi_lifespan.LifespanManager`, often reached for to test startup
-    code), this fails loudly instead of silently serving requests against a
-    real, un-isolated database.
-    """
-    transport = httpx.ASGITransport(app=api_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        assert api_app.state.session_factory is db_session_factory
-        yield client
 
 
 @pytest.fixture

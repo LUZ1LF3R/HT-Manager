@@ -27,7 +27,6 @@ def test_settings_loads_from_env(monkeypatch: MonkeyPatch, tmp_path: Path) -> No
     assert settings.discord_guild_id == 123456789
     assert settings.admin_role_ids == [1, 2, 3]
     assert settings.ctf_resource_retention_days == 60
-    assert settings.public_api_origins == []
 
 
 def test_settings_missing_required_raises_actionable_error(
@@ -72,4 +71,3 @@ def test_settings_loads_from_dotenv_file(monkeypatch: MonkeyPatch, tmp_path: Pat
     assert settings.discord_guild_id == 123456789
     assert settings.admin_role_ids == [1, 2, 3]
     assert settings.ctf_resource_retention_days == 60
-    assert settings.public_api_origins == []

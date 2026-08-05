@@ -24,7 +24,6 @@ class Settings(BaseSettings):
     member_role_id: int | None = None
     bot_log_channel_id: int | None = None
     ctf_resource_retention_days: int = 60
-    public_api_origins: Annotated[list[str], NoDecode] = []
     log_level: str = "INFO"
 
     @field_validator("admin_role_ids", mode="before")
@@ -32,13 +31,6 @@ class Settings(BaseSettings):
     def _split_admin_role_ids(cls, value: object) -> object:
         if isinstance(value, str):
             return [int(item) for item in value.split(",") if item.strip()]
-        return value
-
-    @field_validator("public_api_origins", mode="before")
-    @classmethod
-    def _split_public_api_origins(cls, value: object) -> object:
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
 
