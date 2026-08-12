@@ -36,20 +36,24 @@ async def test_admin_only_check_predicate_false_for_non_admin(settings: Settings
     assert await checks[0](interaction) is False
 
 
-async def test_on_app_command_error_check_failure_sends_denial_message(bot: HTManagerBot) -> None:
+async def test_on_app_command_error_check_failure_sends_denial_message(
+    offline_bot: HTManagerBot,
+) -> None:
     interaction = _interaction(response_done=False)
 
-    await bot._on_app_command_error(interaction, app_commands.CheckFailure("denied"))
+    await offline_bot._on_app_command_error(interaction, app_commands.CheckFailure("denied"))
 
     interaction.response.send_message.assert_awaited_once()
     message = interaction.response.send_message.call_args.args[0]
     assert "permission" in message.lower()
 
 
-async def test_on_app_command_error_generic_error_sends_generic_message(bot: HTManagerBot) -> None:
+async def test_on_app_command_error_generic_error_sends_generic_message(
+    offline_bot: HTManagerBot,
+) -> None:
     interaction = _interaction(response_done=False)
 
-    await bot._on_app_command_error(interaction, app_commands.CommandInvokeError(
+    await offline_bot._on_app_command_error(interaction, app_commands.CommandInvokeError(
         MagicMock(), ValueError("boom")
     ))
 
@@ -58,19 +62,23 @@ async def test_on_app_command_error_generic_error_sends_generic_message(bot: HTM
     assert "went wrong" in message.lower()
 
 
-async def test_on_app_command_error_uses_followup_when_response_done(bot: HTManagerBot) -> None:
+async def test_on_app_command_error_uses_followup_when_response_done(
+    offline_bot: HTManagerBot,
+) -> None:
     interaction = _interaction(response_done=True)
 
-    await bot._on_app_command_error(interaction, app_commands.CheckFailure("denied"))
+    await offline_bot._on_app_command_error(interaction, app_commands.CheckFailure("denied"))
 
     interaction.followup.send.assert_awaited_once()
     interaction.response.send_message.assert_not_awaited()
 
 
-async def test_on_app_command_error_swallows_http_exception_from_reply(bot: HTManagerBot) -> None:
+async def test_on_app_command_error_swallows_http_exception_from_reply(
+    offline_bot: HTManagerBot,
+) -> None:
     interaction = _interaction(response_done=False)
     interaction.response.send_message = AsyncMock(
         side_effect=discord.HTTPException(MagicMock(status=400), "bad")
     )
 
-    await bot._on_app_command_error(interaction, app_commands.CheckFailure("denied"))
+    await offline_bot._on_app_command_error(interaction, app_commands.CheckFailure("denied"))

@@ -11,6 +11,7 @@ from ht_manager.db.repositories import ctf_discord_resources as resources_repo
 from ht_manager.db.repositories import ctfs as ctfs_repo
 from ht_manager.db.repositories import polls as polls_repo
 from ht_manager.services import ctfs as ctfs_service
+from ht_manager.services import discord_resources
 from ht_manager.services import polls as polls_service
 
 START = datetime(2026, 9, 1, tzinfo=UTC)
@@ -40,6 +41,22 @@ async def test_open_draft_requires_candidates(db_session: AsyncSession) -> None:
         await polls_service.open_draft(
             db_session, actor_discord_id=1, guild_id=1, channel_id=2, ctf_ids=[]
         )
+
+
+async def test_cancel_draft_deletes_poll_and_its_options(db_session: AsyncSession) -> None:
+    """poll_options has no ON DELETE CASCADE, so deleting a poll that still
+    has options (the normal case — /nextctf always creates them) must clear
+    the options first or the delete violates the foreign key."""
+    ctf_a = await _make_ctf(db_session, "A")
+    ctf_b = await _make_ctf(db_session, "B")
+    poll = await polls_service.open_draft(
+        db_session, actor_discord_id=1, guild_id=1, channel_id=2, ctf_ids=[ctf_a, ctf_b]
+    )
+
+    await polls_service.cancel_draft(db_session, actor_discord_id=1, poll_id=poll.id)
+
+    assert await polls_repo.get(db_session, poll.id) is None
+    assert await polls_repo.list_options(db_session, poll.id) == []
 
 
 async def test_remove_candidate_deletes_option(db_session: AsyncSession) -> None:
@@ -178,15 +195,22 @@ async def test_setup_ctf_resources_creates_role_workspace_and_participation(
         calls["role_name"] = name
         return 555
 
-    async def fake_create_workspace(bot, *, guild_id, forum_channel_id, ctf_name):
-        calls["workspace_name"] = ctf_name
+    async def fake_create_ctf_forum(bot, *, guild_id, category_id, ctf_name):
+        calls["forum_name"] = ctf_name
+        return 666
+
+    async def fake_create_general_post(bot, *, guild_id, forum_channel_id, ctf_name):
+        calls["general_post_forum"] = forum_channel_id
         return 777
 
     async def fake_assign_role(bot, *, guild_id, role_id, user_ids):
         calls["assigned"] = (role_id, sorted(user_ids))
 
     monkeypatch.setattr(polls_service.discord_resources, "create_role", fake_create_role)
-    monkeypatch.setattr(polls_service.discord_resources, "create_workspace", fake_create_workspace)
+    monkeypatch.setattr(polls_service.discord_resources, "create_ctf_forum", fake_create_ctf_forum)
+    monkeypatch.setattr(
+        polls_service.discord_resources, "create_general_post", fake_create_general_post
+    )
     monkeypatch.setattr(polls_service.discord_resources, "assign_role", fake_assign_role)
 
     async with db_session_factory() as session, session.begin():
@@ -201,17 +225,19 @@ async def test_setup_ctf_resources_creates_role_workspace_and_participation(
         bot=object(),
         ctf_id=ctf_a,
         guild_id=1,
-        forum_channel_id=2,
+        category_id=2,
         retention_days=30,
     )
 
     assert calls["assigned"] == (555, [10, 11])
+    assert calls["general_post_forum"] == 666
     async with db_session_factory() as session:
         ctf = await ctfs_repo.get(session, ctf_a)
         assert ctf.status is CTFStatus.ACTIVE
         resource = await resources_repo.get_by_ctf_id(session, ctf_a)
         assert resource is not None
         assert resource.role_id == 555
+        assert resource.forum_channel_id == 666
         assert resource.thread_id == 777
         assert resource.cleanup_after is not None
         expected = datetime.now(UTC) + timedelta(days=30)
@@ -228,14 +254,20 @@ async def test_setup_ctf_resources_is_idempotent_once_active(
         call_count += 1
         return 555
 
-    async def fake_create_workspace(bot, *, guild_id, forum_channel_id, ctf_name):
+    async def fake_create_ctf_forum(bot, *, guild_id, category_id, ctf_name):
+        return 666
+
+    async def fake_create_general_post(bot, *, guild_id, forum_channel_id, ctf_name):
         return 777
 
     async def fake_assign_role(bot, *, guild_id, role_id, user_ids):
         return None
 
     monkeypatch.setattr(polls_service.discord_resources, "create_role", fake_create_role)
-    monkeypatch.setattr(polls_service.discord_resources, "create_workspace", fake_create_workspace)
+    monkeypatch.setattr(polls_service.discord_resources, "create_ctf_forum", fake_create_ctf_forum)
+    monkeypatch.setattr(
+        polls_service.discord_resources, "create_general_post", fake_create_general_post
+    )
     monkeypatch.setattr(polls_service.discord_resources, "assign_role", fake_assign_role)
 
     async with db_session_factory() as session, session.begin():
@@ -244,8 +276,69 @@ async def test_setup_ctf_resources_is_idempotent_once_active(
             session, actor_discord_id=1, poll_id=poll_id, votes={ctf_a: [10], ctf_b: []}
         )
 
-    kwargs = dict(actor_discord_id=1, bot=object(), ctf_id=ctf_a, guild_id=1, forum_channel_id=2)
+    kwargs = dict(actor_discord_id=1, bot=object(), ctf_id=ctf_a, guild_id=1, category_id=2)
     await polls_service.setup_ctf_resources(db_session_factory, **kwargs)
     await polls_service.setup_ctf_resources(db_session_factory, **kwargs)
 
     assert call_count == 1
+
+
+async def test_setup_ctf_resources_records_role_before_creating_workspace(
+    db_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A forum-creation failure must not orphan the role that was already
+    created: it has to be on the resource row so cleanup can find it and so
+    a retry reuses it instead of creating a second one."""
+    role_calls = 0
+    fail_forum = True
+
+    async def fake_create_role(bot, *, guild_id, name):
+        nonlocal role_calls
+        role_calls += 1
+        return 555
+
+    async def fake_create_ctf_forum(bot, *, guild_id, category_id, ctf_name):
+        if fail_forum:
+            raise discord_resources.DiscordResourceError("category is on fire")
+        return 666
+
+    async def fake_create_general_post(bot, *, guild_id, forum_channel_id, ctf_name):
+        return 777
+
+    async def fake_assign_role(bot, *, guild_id, role_id, user_ids):
+        return None
+
+    monkeypatch.setattr(polls_service.discord_resources, "create_role", fake_create_role)
+    monkeypatch.setattr(polls_service.discord_resources, "create_ctf_forum", fake_create_ctf_forum)
+    monkeypatch.setattr(
+        polls_service.discord_resources, "create_general_post", fake_create_general_post
+    )
+    monkeypatch.setattr(polls_service.discord_resources, "assign_role", fake_assign_role)
+
+    async with db_session_factory() as session, session.begin():
+        poll_id, (ctf_a, ctf_b) = await _open_and_publish(session, ["A", "B"])
+        await polls_service.finalize(
+            session, actor_discord_id=1, poll_id=poll_id, votes={ctf_a: [10], ctf_b: []}
+        )
+
+    kwargs = dict(actor_discord_id=1, bot=object(), ctf_id=ctf_a, guild_id=1, category_id=2)
+
+    with pytest.raises(discord_resources.DiscordResourceError):
+        await polls_service.setup_ctf_resources(db_session_factory, **kwargs)
+
+    async with db_session_factory() as session:
+        resource = await resources_repo.get_by_ctf_id(session, ctf_a)
+        assert resource is not None
+        assert resource.role_id == 555, "role was created but never recorded"
+        assert resource.forum_channel_id is None
+        assert resource.thread_id is None
+
+    fail_forum = False
+    await polls_service.setup_ctf_resources(db_session_factory, **kwargs)
+
+    assert role_calls == 1, "retry created a second role instead of reusing the recorded one"
+    async with db_session_factory() as session:
+        resource = await resources_repo.get_by_ctf_id(session, ctf_a)
+        assert resource.role_id == 555
+        assert resource.thread_id == 777
+        assert (await ctfs_repo.get(session, ctf_a)).status is CTFStatus.ACTIVE

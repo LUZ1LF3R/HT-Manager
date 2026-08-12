@@ -120,7 +120,8 @@ Define configuration by Discord IDs, never by hard-coded display names.
 - `ADMIN_ROLE_IDS`: users allowed to curate CTFs, create/close polls, add manual results, force sync, end/archive CTFs.
 - `MEMBER_ROLE_ID`: optional team-member gate for participation commands.
 - `RESULTS_CHANNEL_ID`: destination for result announcements.
-- `CTF_FORUM_CHANNEL_ID`: the existing Discord Forum channel/container where event posts/workspaces are created.
+- `CTF_CATEGORY_ID`: the Discord category a CTF's dedicated Forum channel is created under.
+- `CTF_ARCHIVE_CATEGORY_ID`: the Discord category a finished CTF's Forum channel is moved to.
 - `BOT_LOG_CHANNEL_ID`: optional private admin channel for operational warnings.
 
 Every privileged command must enforce permissions server-side. Do not rely only on Discord UI visibility.
@@ -173,12 +174,13 @@ Every privileged command must enforce permissions server-side. Do not rely only 
 After a poll winner is finalized, create a temporary role named using the event, e.g. `L3akCTF 2026`. The role is for access control only; it is not the historical participation record.
 
 - Assign the role to users who voted for the winning CTF.
-- Use one existing Discord Forum channel/container for CTF workspaces.
-- Create a forum post/thread/workspace named after the CTF, with a single initial post/topic named or representing General.
+- **[REVISED]** Create a dedicated Forum channel for the CTF, named after the event, under the `CTF_CATEGORY_ID` category — not a post/thread inside a shared forum.
+- Create a single starting post named `general` inside that forum channel.
 - Only the relevant CTF role (plus administrators/moderators/bot) should be able to access the CTF workspace where Discord permissions allow this design.
 - Do not create separate #pwn/#web/#rev/#crypto/etc. channels.
-- Store role ID and workspace/thread/post IDs in the database.
-- After a configurable retention period (default 60 days; allow 30–60 via configuration), remove/delete the temporary role and archive/delete the temporary workspace as appropriate.
+- Store role ID and forum/post IDs in the database.
+- **[REVISED]** A configurable number of days after `/endctf` (default 4), move the CTF's Forum channel to the `CTF_ARCHIVE_CATEGORY_ID` category. This is independent of, and much sooner than, role/thread retention cleanup.
+- After a configurable retention period (default 60 days; allow 30–60 via configuration), remove/delete the temporary role and archive/lock the workspace's `general` post as appropriate.
 - Cleanup must never delete participation/history records.
 
 **Implementation note:** Discord Forum permission semantics should be validated against the actual server layout. If per-post visibility cannot be restricted independently in the chosen forum design, document the limitation and use the simplest permission-safe alternative rather than inventing a complex channel tree.
@@ -286,7 +288,7 @@ GET /api/v1/stats
 | poll_options | poll_id, ctf_id, option index/identifier. |
 | poll_votes | poll_id, ctf_id, discord_user_id, recorded_at. |
 | participations | ctf_id, discord_user_id, source, joined_at; unique(ctf_id, discord_user_id). |
-| ctf_discord_resources | ctf_id, role_id, forum/thread/post IDs, created_at, cleanup_after, cleaned_at. |
+| ctf_discord_resources | ctf_id, role_id, forum/thread/post IDs, created_at, cleanup_after, cleaned_at, archive_after, archived_at. |
 | results | ctf_id, source, placement, total_teams, score, rating fields, source_url, announced_at, timestamps. |
 | ctf_category_stats | ctf_id, category_name, solved, total. |
 | sync_state | integration key, cursor/hash/last_success/last_error as needed. |
@@ -400,7 +402,8 @@ DISCORD_GUILD_ID=
 DATABASE_URL=postgresql+asyncpg://...
 CTFTIME_TEAM_ID=
 RESULTS_CHANNEL_ID=
-CTF_FORUM_CHANNEL_ID=
+CTF_CATEGORY_ID=
+CTF_ARCHIVE_CATEGORY_ID=
 ADMIN_ROLE_IDS=
 MEMBER_ROLE_ID=
 CTF_RESOURCE_RETENTION_DAYS=60

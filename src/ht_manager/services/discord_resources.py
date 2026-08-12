@@ -30,17 +30,41 @@ async def create_role(bot: discord.Client, *, guild_id: int, name: str) -> int:
     return role.id
 
 
-async def create_workspace(
+async def _get_category(guild: discord.Guild, category_id: int) -> discord.CategoryChannel:
+    channel = guild.get_channel(category_id)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(category_id)
+        except discord.HTTPException as exc:
+            raise DiscordResourceError(f"Could not fetch category {category_id}") from exc
+    if not isinstance(channel, discord.CategoryChannel):
+        raise DiscordResourceError(f"Channel {category_id} is not a category")
+    return channel
+
+
+async def create_ctf_forum(
+    bot: discord.Client, *, guild_id: int, category_id: int, ctf_name: str
+) -> int:
+    """Creates a dedicated Forum channel for the CTF under `category_id`
+    (spec §8). One forum per CTF, not a shared one — the CTF role exists
+    for pinging/organization, not access control. Returns the forum
+    channel's ID."""
+    guild = await _get_guild(bot, guild_id)
+    category = await _get_category(guild, category_id)
+    try:
+        forum = await guild.create_forum(
+            name=ctf_name, category=category, reason="CTF workspace forum"
+        )
+    except discord.HTTPException as exc:
+        raise DiscordResourceError(f"Could not create forum channel for {ctf_name!r}") from exc
+    return forum.id
+
+
+async def create_general_post(
     bot: discord.Client, *, guild_id: int, forum_channel_id: int, ctf_name: str
 ) -> int:
-    """Creates a single forum post/thread for the CTF (spec §8).
-
-    Discord doesn't support restricting visibility of one post within a
-    shared public forum independently of the others, so per the spec's
-    implementation note this workspace is a normal, visible-to-everyone
-    forum post — the CTF role exists for pinging/organization, not access
-    control. Returns the created thread's ID.
-    """
+    """Creates the single starting "general" post inside a CTF's dedicated
+    forum channel. Returns the created thread's ID."""
     guild = await _get_guild(bot, guild_id)
     channel = guild.get_channel(forum_channel_id)
     if channel is None:
@@ -53,11 +77,38 @@ async def create_workspace(
 
     try:
         result = await channel.create_thread(
-            name=ctf_name, content=f"Workspace for **{ctf_name}**. GLHF!"
+            name="general", content=f"Workspace for **{ctf_name}**. GLHF!"
         )
     except discord.HTTPException as exc:
-        raise DiscordResourceError(f"Could not create workspace thread for {ctf_name!r}") from exc
+        raise DiscordResourceError(f"Could not create general post for {ctf_name!r}") from exc
     return result.thread.id
+
+
+async def move_forum_to_category(
+    bot: discord.Client, *, guild_id: int, forum_channel_id: int, category_id: int
+) -> None:
+    """Moves a CTF's forum channel into `category_id` (spec §8's post-`/endctf`
+    archive move). Logs and returns rather than raising — this runs from a
+    batch job (spec §18.1), a single failure shouldn't abort the run."""
+    guild = await _get_guild(bot, guild_id)
+    channel = guild.get_channel(forum_channel_id)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(forum_channel_id)
+        except discord.HTTPException:
+            logger.warning(
+                "Could not fetch forum channel %s to move to archive", forum_channel_id,
+                exc_info=True,
+            )
+            return
+    try:
+        category = await _get_category(guild, category_id)
+        await channel.edit(category=category, reason="CTF finished — moved to archive category")
+    except (discord.HTTPException, DiscordResourceError):
+        logger.warning(
+            "Could not move forum channel %s to archive category %s",
+            forum_channel_id, category_id, exc_info=True,
+        )
 
 
 async def assign_role(

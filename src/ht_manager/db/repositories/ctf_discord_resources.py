@@ -33,3 +33,19 @@ async def list_due_for_cleanup(session: AsyncSession, now) -> list[CTFDiscordRes
         )
     )
     return list(result.scalars().all())
+
+
+async def mark_archived(session: AsyncSession, resource: CTFDiscordResource, now) -> None:
+    resource.archived_at = now
+    await session.flush()
+
+
+async def list_due_for_archive_move(session: AsyncSession, now) -> list[CTFDiscordResource]:
+    result = await session.execute(
+        select(CTFDiscordResource).where(
+            CTFDiscordResource.archived_at.is_(None),
+            CTFDiscordResource.archive_after.is_not(None),
+            CTFDiscordResource.archive_after <= now,
+        )
+    )
+    return list(result.scalars().all())

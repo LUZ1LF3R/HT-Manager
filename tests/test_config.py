@@ -11,7 +11,8 @@ REQUIRED_ENV = {
     "DATABASE_URL": "postgresql+asyncpg://ht_manager:ht_manager@localhost:5432/ht_manager",
     "CTFTIME_TEAM_ID": "999",
     "RESULTS_CHANNEL_ID": "111",
-    "CTF_FORUM_CHANNEL_ID": "222",
+    "CTF_CATEGORY_ID": "222",
+    "CTF_ARCHIVE_CATEGORY_ID": "333",
     "ADMIN_ROLE_IDS": "1,2,3",
 }
 

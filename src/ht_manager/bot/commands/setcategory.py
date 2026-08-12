@@ -4,6 +4,7 @@ import discord
 from discord.ext.commands import Bot
 
 from ht_manager.bot.permissions import admin_only
+from ht_manager.services import ctfs as ctfs_service
 from ht_manager.services import summary as summary_service
 
 
@@ -19,9 +20,9 @@ def register_setcategory_command(bot: Bot) -> None:
     async def setcategory(
         interaction: discord.Interaction, ctf_id: int, category: str, solved: int, total: int
     ) -> None:
-        if solved > total or solved < 0 or total < 0:
+        if total < 0 or solved < 0 or solved > total:
             await interaction.response.send_message(
-                "solved must be between 0 and total.", ephemeral=True
+                "Need 0 <= solved <= total, and neither can be negative.", ephemeral=True
             )
             return
 
@@ -36,7 +37,7 @@ def register_setcategory_command(bot: Bot) -> None:
                     solved=solved,
                     total=total,
                 )
-        except summary_service.CTFNotFoundError as exc:
+        except (summary_service.CTFNotFoundError, ctfs_service.InvalidCTFStateError) as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
 

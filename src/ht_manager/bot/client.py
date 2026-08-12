@@ -25,8 +25,9 @@ from ht_manager.bot.commands.resolvepoll import register_resolvepoll_command
 from ht_manager.bot.commands.resultsync import register_resultsync_command
 from ht_manager.bot.commands.setcategory import register_setcategory_command
 from ht_manager.bot.commands.setupctf import register_setupctf_command
+from ht_manager.bot.commands.summary import register_summary_command
 from ht_manager.config import Settings
-from ht_manager.jobs.cleanup import cleanup_expired_resources
+from ht_manager.jobs.cleanup import archive_finished_workspaces, cleanup_expired_resources
 from ht_manager.jobs.poll_close import close_expired_polls
 from ht_manager.jobs.result_sync import sync_results
 
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 POLL_CLOSE_CHECK_INTERVAL_MINUTES = 5
 CLEANUP_CHECK_INTERVAL_HOURS = 24
+ARCHIVE_MOVE_CHECK_INTERVAL_HOURS = 24
 RESULT_SYNC_INTERVAL_HOURS = 12
 
 
@@ -66,6 +68,7 @@ class HTManagerBot(commands.Bot):
         register_deletectf_command(self)
         register_setcategory_command(self)
         register_endctf_command(self)
+        register_summary_command(self)
         register_archivectf_command(self)
         self.tree.on_error = self._on_app_command_error
         guild = discord.Object(id=self.settings.discord_guild_id)
@@ -85,6 +88,13 @@ class HTManagerBot(commands.Bot):
             hours=CLEANUP_CHECK_INTERVAL_HOURS,
             args=[self, self.session_factory],
             id="cleanup_expired_resources",
+        )
+        self.scheduler.add_job(
+            archive_finished_workspaces,
+            "interval",
+            hours=ARCHIVE_MOVE_CHECK_INTERVAL_HOURS,
+            args=[self, self.session_factory],
+            id="archive_finished_workspaces",
         )
         self.scheduler.add_job(
             sync_results,

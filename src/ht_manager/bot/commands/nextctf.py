@@ -11,7 +11,7 @@ from ht_manager.services import ctfs as ctfs_service
 from ht_manager.services import polls as polls_service
 from ht_manager.services.ctftime import CTFTimeClient, CTFTimeError
 
-DEFAULT_WINDOW_DAYS = 21
+DEFAULT_WINDOW_DAYS = 7
 
 
 def _build_embed(candidates: dict[int, str]) -> discord.Embed:

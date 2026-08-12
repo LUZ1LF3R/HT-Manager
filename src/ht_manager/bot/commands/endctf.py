@@ -3,6 +3,7 @@ from __future__ import annotations
 import discord
 from discord.ext.commands import Bot
 
+from ht_manager.bot.formatting import code_block
 from ht_manager.bot.permissions import admin_only
 from ht_manager.services import ctfs as ctfs_service
 from ht_manager.services import summary as summary_service
@@ -23,4 +24,4 @@ def register_endctf_command(bot: Bot) -> None:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
 
-        await interaction.response.send_message(f"```\n{summary}\n```")
+        await interaction.response.send_message(code_block(summary))

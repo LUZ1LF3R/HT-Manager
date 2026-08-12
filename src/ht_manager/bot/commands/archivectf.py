@@ -19,17 +19,14 @@ def register_archivectf_command(bot: Bot) -> None:
             async with session_factory() as session, session.begin():
                 ctf = await ctfs_repo.get(session, ctf_id)
                 if ctf is None:
-                    await interaction.response.send_message(
-                        f"No CTF with ID {ctf_id}.", ephemeral=True
-                    )
-                    return
+                    raise ctfs_service.CTFNotFoundError(f"No CTF with ID {ctf_id}.")
                 await ctfs_service.transition(
                     session,
                     actor_discord_id=interaction.user.id,
                     ctf=ctf,
                     new_status=CTFStatus.ARCHIVED,
                 )
-        except ctfs_service.InvalidCTFTransitionError as exc:
+        except (ctfs_service.CTFNotFoundError, ctfs_service.InvalidCTFTransitionError) as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
 

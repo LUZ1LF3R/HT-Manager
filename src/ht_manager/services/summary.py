@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ht_manager.db.models.ctf import CTFStatus
 from ht_manager.db.models.ctf_category_stat import CTFCategoryStat
 from ht_manager.db.repositories import audit_log as audit_log_repo
 from ht_manager.db.repositories import category_stats as category_stats_repo
+from ht_manager.db.repositories import ctf_discord_resources as resources_repo
 from ht_manager.db.repositories import ctfs as ctfs_repo
 from ht_manager.db.repositories import participation as participation_repo
 from ht_manager.db.repositories import results as results_repo
 from ht_manager.services import ctfs as ctfs_service
+
+# Spec §8: the per-CTF forum moves to the archive category this long after
+# /endctf, well ahead of the much longer role/thread retention cleanup.
+WORKSPACE_ARCHIVE_DELAY_DAYS = 4
 
 
 class CTFNotFoundError(Exception):
@@ -25,8 +32,15 @@ async def set_category_stat(
     solved: int,
     total: int,
 ) -> CTFCategoryStat:
-    if await ctfs_repo.get(session, ctf_id) is None:
+    ctf = await ctfs_repo.get(session, ctf_id)
+    if ctf is None:
         raise CTFNotFoundError(f"CTF {ctf_id} not found")
+    # Same lock as /editctf: once a CTF is archived or cancelled its record
+    # is history, and history doesn't get edited (spec §14.3).
+    if ctf.status in ctfs_service.LOCKED_STATUSES:
+        raise ctfs_service.InvalidCTFStateError(
+            f"CTF {ctf_id} is {ctf.status.value}; its summary can no longer be edited"
+        )
 
     existing = await category_stats_repo.get(session, ctf_id=ctf_id, category_name=category_name)
     before = None
@@ -67,6 +81,12 @@ async def finish_ctf(session: AsyncSession, *, actor_discord_id: int, ctf_id: in
     await ctfs_service.transition(
         session, actor_discord_id=actor_discord_id, ctf=ctf, new_status=CTFStatus.FINISHED
     )
+
+    resource = await resources_repo.get_by_ctf_id(session, ctf_id)
+    if resource is not None and resource.forum_channel_id is not None:
+        resource.archive_after = datetime.now(UTC) + timedelta(days=WORKSPACE_ARCHIVE_DELAY_DAYS)
+        await session.flush()
+
     return await render_summary(session, ctf_id)
 
 

@@ -22,7 +22,7 @@ async def _finish_setup(interaction: discord.Interaction, ctf_id: int) -> str:
             bot=bot,
             ctf_id=ctf_id,
             guild_id=settings.discord_guild_id,
-            forum_channel_id=settings.ctf_forum_channel_id,
+            category_id=settings.ctf_category_id,
             retention_days=settings.ctf_resource_retention_days,
         )
     except Exception:

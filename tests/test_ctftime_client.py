@@ -63,32 +63,69 @@ async def test_get_event_retries_then_raises_on_persistent_5xx() -> None:
     assert attempts == 2
 
 
-async def test_get_event_results_parses_standings() -> None:
+async def test_get_year_results_parses_live_payload_shape() -> None:
+    """Mirrors the real `/api/v1/results/<year>/` response: keyed by event id
+    as a *string*, standings under `scores`, and `points` serialized as a
+    string like "6856.0000" rather than a number."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v1/events/42/results/"
+        assert request.url.path == "/api/v1/results/2026/"
         return httpx.Response(
             200,
             json={
-                "standings": [
-                    {"place": 1, "team_id": 5, "team": "Winners", "points": 100.0},
-                    {"place": 2, "team_id": 999, "team": "HackerTroupe", "points": 80.0},
-                ]
+                "42": {
+                    "title": "L3akCTF 2026",
+                    "scores": [
+                        {"team_id": 5, "points": "6856.0000", "place": 1},
+                        {"team_id": 999, "points": "5415.0000", "place": 2},
+                    ],
+                },
+                "43": {"title": "Other CTF", "scores": []},
             },
         )
 
     client = _client(handler)
-    results = await client.get_event_results(42)
-    assert len(results) == 2
-    assert results[1].team_id == 999
-    assert results[1].place == 2
+    results = await client.get_year_results(2026)
+
+    assert set(results) == {42, 43}
+    assert results[43] == []
+    standings = results[42]
+    assert len(standings) == 2
+    assert standings[1].team_id == 999
+    assert standings[1].place == 2
+    assert standings[1].points == 5415.0
 
 
-async def test_get_event_results_returns_empty_on_404() -> None:
+async def test_get_year_results_skips_malformed_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "42": {
+                    "scores": [
+                        {"team_id": 5, "points": "100.0", "place": 1},
+                        {"team_id": 6, "place": 2},  # missing points -> None, still kept
+                        {"points": "50.0", "place": 3},  # no team_id -> dropped
+                    ]
+                },
+                "not-an-id": {"scores": []},
+            },
+        )
+
+    client = _client(handler)
+    results = await client.get_year_results(2026)
+
+    assert set(results) == {42}
+    assert [entry.team_id for entry in results[42]] == [5, 6]
+    assert results[42][1].points is None
+
+
+async def test_get_year_results_returns_empty_on_404() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404)
 
     client = _client(handler)
-    assert await client.get_event_results(1) == []
+    assert await client.get_year_results(1999) == {}
 
 
 async def test_list_upcoming_events_parses_all_results() -> None:

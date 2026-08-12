@@ -105,6 +105,12 @@ async def add_candidate(
 
 async def cancel_draft(session: AsyncSession, *, actor_discord_id: int, poll_id: int) -> None:
     poll = await _get_drafting_poll(session, poll_id)
+    # poll_options has no ON DELETE CASCADE, so its rows must go first or
+    # deleting the poll violates the foreign key. A DRAFTING poll never has
+    # votes (those only exist from finalize() on an OPEN poll), so options
+    # are the only child rows to clear.
+    for option in await polls_repo.list_options(session, poll.id):
+        await polls_repo.delete_option(session, option)
     await polls_repo.delete_poll(session, poll)
     await audit_log_repo.record(
         session,
@@ -307,7 +313,7 @@ async def setup_ctf_resources(
     bot,
     ctf_id: int,
     guild_id: int,
-    forum_channel_id: int,
+    category_id: int,
     retention_days: int = 60,
 ) -> None:
     """The winner-resolution sequence (spec §15.2), triggered once by either
@@ -327,34 +333,41 @@ async def setup_ctf_resources(
     async with session_factory() as session:
         resource = await resources_repo.get_by_ctf_id(session, ctf_id)
 
-    if resource is None or resource.role_id is None or resource.thread_id is None:
+    role_id = resource.role_id if resource is not None else None
+    forum_channel_id = resource.forum_channel_id if resource is not None else None
+    thread_id = resource.thread_id if resource is not None else None
+    cleanup_after = datetime.now(UTC) + timedelta(days=retention_days)
+
+    # Each Discord object is persisted the moment it exists, before the next
+    # one is created. Creating both and saving once would mean a failure in
+    # between leaves a role that nothing records — invisible to cleanup, and
+    # duplicated by the next /setupctf retry.
+    if role_id is None:
         role_id = await discord_resources.create_role(
             bot, guild_id=guild_id, name=f"{ctf.name} {ctf.year}"
         )
-        thread_id = await discord_resources.create_workspace(
+        await _save_resource(
+            session_factory, ctf_id=ctf_id, cleanup_after=cleanup_after, role_id=role_id
+        )
+
+    if forum_channel_id is None:
+        forum_channel_id = await discord_resources.create_ctf_forum(
+            bot, guild_id=guild_id, category_id=category_id, ctf_name=ctf.name
+        )
+        await _save_resource(
+            session_factory,
+            ctf_id=ctf_id,
+            cleanup_after=cleanup_after,
+            forum_channel_id=forum_channel_id,
+        )
+
+    if thread_id is None:
+        thread_id = await discord_resources.create_general_post(
             bot, guild_id=guild_id, forum_channel_id=forum_channel_id, ctf_name=ctf.name
         )
-        cleanup_after = datetime.now(UTC) + timedelta(days=retention_days)
-        async with session_factory() as session, session.begin():
-            resource = await resources_repo.get_by_ctf_id(session, ctf_id)
-            if resource is None:
-                await resources_repo.add(
-                    session,
-                    CTFDiscordResource(
-                        ctf_id=ctf_id,
-                        role_id=role_id,
-                        forum_channel_id=forum_channel_id,
-                        thread_id=thread_id,
-                        cleanup_after=cleanup_after,
-                    ),
-                )
-            else:
-                resource.role_id = role_id
-                resource.forum_channel_id = forum_channel_id
-                resource.thread_id = thread_id
-                resource.cleanup_after = cleanup_after
-    else:
-        role_id = resource.role_id
+        await _save_resource(
+            session_factory, ctf_id=ctf_id, cleanup_after=cleanup_after, thread_id=thread_id
+        )
 
     async with session_factory() as session, session.begin():
         voter_ids = await polls_repo.list_voter_ids_for_ctf(session, ctf_id)
@@ -367,6 +380,49 @@ async def setup_ctf_resources(
 
     async with session_factory() as session, session.begin():
         ctf = await ctfs_repo.get(session, ctf_id)
+        if ctf is None:
+            raise ctfs_service.CTFNotFoundError(f"CTF {ctf_id} not found")
         await ctfs_service.transition(
             session, actor_discord_id=actor_discord_id, ctf=ctf, new_status=CTFStatus.ACTIVE
         )
+
+
+async def _save_resource(
+    session_factory,
+    *,
+    ctf_id: int,
+    cleanup_after: datetime,
+    role_id: int | None = None,
+    forum_channel_id: int | None = None,
+    thread_id: int | None = None,
+) -> None:
+    """Checkpoints one just-created Discord object onto the CTF's resource row.
+
+    Only writes the field it was handed, so the role/forum/post steps can
+    each checkpoint independently on a partial run. `cleanup_after` is
+    stamped once and never moved (spec §8) — a retry must not extend the
+    retention window.
+    """
+    async with session_factory() as session, session.begin():
+        resource = await resources_repo.get_by_ctf_id(session, ctf_id)
+        if resource is None:
+            await resources_repo.add(
+                session,
+                CTFDiscordResource(
+                    ctf_id=ctf_id,
+                    role_id=role_id,
+                    forum_channel_id=forum_channel_id,
+                    thread_id=thread_id,
+                    cleanup_after=cleanup_after,
+                ),
+            )
+            return
+
+        if role_id is not None:
+            resource.role_id = role_id
+        if forum_channel_id is not None:
+            resource.forum_channel_id = forum_channel_id
+        if thread_id is not None:
+            resource.thread_id = thread_id
+        if resource.cleanup_after is None:
+            resource.cleanup_after = cleanup_after

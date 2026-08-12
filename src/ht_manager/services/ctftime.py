@@ -27,6 +27,33 @@ class CTFTimeTeamResult:
     team_id: int
 
 
+def _parse_points(raw: object) -> float | None:
+    """CTFTime serializes points as a string (`"6856.0000"`), not a number."""
+    if raw is None or raw == "":
+        return None
+    try:
+        return float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        logger.warning("Unparseable CTFTime points value: %r", raw)
+        return None
+
+
+def _parse_scores(scores: list[dict]) -> list[CTFTimeTeamResult]:
+    parsed = []
+    for entry in scores:
+        try:
+            parsed.append(
+                CTFTimeTeamResult(
+                    place=int(entry["place"]),
+                    points=_parse_points(entry.get("points")),
+                    team_id=int(entry["team_id"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Skipping malformed CTFTime standings entry: %r", entry)
+    return parsed
+
+
 @dataclass(frozen=True)
 class CTFTimeEvent:
     ctftime_event_id: int
@@ -76,8 +103,6 @@ class CTFTimeClient:
 
     async def get_event(self, ctftime_event_id: int) -> CTFTimeEvent | None:
         response = await self._get_with_retries(f"/events/{ctftime_event_id}/")
-        if response is None:
-            return None
         if response.status_code == 404:
             return None
         response.raise_for_status()
@@ -96,30 +121,37 @@ class CTFTimeClient:
                 "finish": int(finish.timestamp()),
             },
         )
-        if response is None:
-            return []
         response.raise_for_status()
         return [_parse_event(item) for item in response.json()]
 
-    async def get_event_results(self, ctftime_event_id: int) -> list[CTFTimeTeamResult]:
-        """Full standings for one event — used to find our own team's
-        placement (spec §10) since CTFTime's public API doesn't expose a
-        "results for team X across all events" endpoint."""
-        response = await self._get_with_retries(f"/events/{ctftime_event_id}/results/")
-        if response is None or response.status_code == 404:
-            return []
+    async def get_year_results(self, year: int) -> dict[int, list[CTFTimeTeamResult]]:
+        """Standings for every event of `year` that has published results,
+        keyed by CTFTime event id.
+
+        There is deliberately no per-event variant: CTFTime's API exposes
+        results only per year (`/api/v1/results/<year>/`) — `/events/<id>/
+        results/` returns 404 against the live API. One request therefore
+        covers every CTF we ran in that year, which is why the sync job
+        groups its candidates by year before calling this.
+        """
+        response = await self._get_with_retries(f"/results/{year}/")
+        if response.status_code == 404:
+            return {}
         response.raise_for_status()
-        standings = response.json().get("standings", [])
-        return [
-            CTFTimeTeamResult(
-                place=entry["place"], points=entry.get("points"), team_id=entry["team_id"]
-            )
-            for entry in standings
-        ]
+
+        results: dict[int, list[CTFTimeTeamResult]] = {}
+        for event_id, event in response.json().items():
+            try:
+                key = int(event_id)
+            except (TypeError, ValueError):
+                logger.warning("Skipping non-numeric CTFTime event key: %r", event_id)
+                continue
+            results[key] = _parse_scores(event.get("scores") or [])
+        return results
 
     async def _get_with_retries(
         self, path: str, *, params: dict[str, object] | None = None
-    ) -> httpx.Response | None:
+    ) -> httpx.Response:
         last_error: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             try:

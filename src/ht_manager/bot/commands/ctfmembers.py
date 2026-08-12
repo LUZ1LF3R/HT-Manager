@@ -3,6 +3,7 @@ from __future__ import annotations
 import discord
 from discord.ext.commands import Bot
 
+from ht_manager.bot.formatting import truncate_for_discord
 from ht_manager.db.repositories import participation as participation_repo
 
 
@@ -19,4 +20,6 @@ def register_ctfmembers_command(bot: Bot) -> None:
             return
 
         mentions = "\n".join(f"- <@{row.discord_user_id}> ({row.source.value})" for row in rows)
-        await interaction.response.send_message(f"Participants for CTF #{ctf_id}:\n{mentions}")
+        await interaction.response.send_message(
+            truncate_for_discord(f"Participants for CTF #{ctf_id}:\n{mentions}")
+        )

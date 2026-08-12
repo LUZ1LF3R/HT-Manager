@@ -19,7 +19,8 @@ class Settings(BaseSettings):
     database_url: str = Field(min_length=1)
     ctftime_team_id: str = Field(min_length=1)
     results_channel_id: int
-    ctf_forum_channel_id: int
+    ctf_category_id: int
+    ctf_archive_category_id: int
     admin_role_ids: Annotated[list[int], NoDecode] = Field(min_length=1)
     member_role_id: int | None = None
     bot_log_channel_id: int | None = None

@@ -48,3 +48,37 @@ async def cleanup_expired_resources(
             fresh = await resources_repo.get_by_ctf_id(session, resource.ctf_id)
             if fresh is not None:
                 await resources_repo.mark_cleaned(session, fresh, now)
+
+
+async def archive_finished_workspaces(
+    bot: Bot, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Moves a finished CTF's forum channel to the archive category, a few
+    days after `/endctf` stamps `archive_after` (spec §8) — well ahead of,
+    and independent from, the much later role/thread retention cleanup
+    above. Idempotent for the same reason as `cleanup_expired_resources`:
+    `list_due_for_archive_move` excludes anything already `archived_at`.
+    """
+    settings = bot.settings  # type: ignore[attr-defined]
+    now = datetime.now(UTC)
+
+    async with session_factory() as session:
+        due = await resources_repo.list_due_for_archive_move(session, now)
+
+    for resource in due:
+        if resource.forum_channel_id is not None:
+            try:
+                await discord_resources.move_forum_to_category(
+                    bot,
+                    guild_id=settings.discord_guild_id,
+                    forum_channel_id=resource.forum_channel_id,
+                    category_id=settings.ctf_archive_category_id,
+                )
+            except Exception:
+                logger.exception("Archive move failed for ctf_discord_resources.id=%s", resource.id)
+                continue
+
+        async with session_factory() as session, session.begin():
+            fresh = await resources_repo.get_by_ctf_id(session, resource.ctf_id)
+            if fresh is not None:
+                await resources_repo.mark_archived(session, fresh, now)

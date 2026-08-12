@@ -5,6 +5,127 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### Fixed — "Cancel Draft" button always failed
+
+`cancel_draft()` deleted the `Poll` row directly, but `poll_options` has no
+`ON DELETE CASCADE` and no ORM cascade was configured — every draft has at
+least the candidates `/nextctf` created, so the delete always violated the
+foreign key and the button silently did nothing. There was no test for
+`cancel_draft` at all, which is how this shipped. Fixed by deleting a
+draft's options before the poll row; added
+`test_cancel_draft_deletes_poll_and_its_options` to cover it.
+
+### Design correction — dedicated per-CTF forum instead of a shared one
+
+Spec §8 originally called for one pre-existing shared Forum channel
+(`CTF_FORUM_CHANNEL_ID`) with a post/thread per CTF inside it. That's not
+what's wanted: each CTF now gets its own dedicated Forum channel (created
+under a `CTF_CATEGORY_ID` category), with a single starting post named
+`general` inside it — no shared container.
+
+- `CTF_FORUM_CHANNEL_ID` is gone. Config now has `CTF_CATEGORY_ID` (where a
+  CTF's forum is created) and `CTF_ARCHIVE_CATEGORY_ID` (where it's moved
+  once the CTF is done).
+- `discord_resources.py`: `create_workspace()` is replaced by
+  `create_ctf_forum()` (creates the dedicated Forum channel) and
+  `create_general_post()` (creates its `general` starting post) — two
+  checkpointed steps instead of one, matching the existing role-then-
+  workspace incremental-save pattern so a failure between them doesn't
+  orphan a forum nothing tracks. New `move_forum_to_category()` relocates a
+  forum channel; it logs and returns rather than raising, since it runs
+  from a batch job where one failure shouldn't abort the run.
+- `ctf_discord_resources` gained `archive_after`/`archived_at` (migration
+  `0007`) — a second, independent lifecycle from the existing
+  `cleanup_after`/`cleaned_at` retention pair. `/endctf` stamps
+  `archive_after` to 4 days out; a new `archive_finished_workspaces` job
+  (daily, alongside `cleanup_expired_resources`) moves the forum to
+  `CTF_ARCHIVE_CATEGORY_ID` once due and marks it `archived_at`. This is
+  deliberately much sooner and separate from the 30–60 day role/thread
+  retention cleanup, which still runs unchanged.
+
+### M6.1 — Review fixes and deployment hardening
+
+Findings from a full-codebase review after M6, weighted toward M5/M6.
+
+**The CTFTime result sync never worked.** `services/ctftime.py` called
+`/api/v1/events/<id>/results/`, which returns 404 on the live API (verified;
+`/api/v1/events/<id>/` returns 200 with the same User-Agent). That 404 was
+treated as "standings not published yet", so `_sync_one` returned early for
+every CTF on every run — no result was ever recorded, and the run still
+stamped `sync_state.last_success_at`. The mocked test asserted the invented
+path and an invented `standings` key, so it confirmed the wrong contract
+instead of catching it. Replaced with `get_year_results(year)` against the
+real `/api/v1/results/<year>/`: keyed by event id, standings under `scores`,
+`points` parsed from its string form. `points` is the event score, so it now
+lands in `Result.score` (which is what `render_summary` prints) rather than
+`rating_points` — spec §12's `Score:` line was previously unreachable for a
+synced CTF. Tests now mirror the live payload shape.
+
+Also in the sync:
+
+- One request per *year* instead of per CTF (CTFTime only publishes results
+  per year, and one year is ~6 MB).
+- `last_success_at` no longer advances when any year or CTF failed; the
+  errors are joined into `last_error` instead. A partial run used to report
+  as healthy, which made the one health signal misleading.
+- Per-CTF failures of any kind are logged and skipped, not just
+  `CTFTimeError`; a missing `ctf` row no longer raises mid-run.
+- `list_awaiting_result_sync` is bounded — 90 days after `end_at`, and
+  excludes hand-corrected results. It previously re-fetched every CTF the
+  team had ever run, twice a day, forever.
+
+**`upsert_from_ctftime` no longer overwrites manual corrections.**
+`/editresult` marks a result `MANUAL`; the next sync used to overwrite it and
+flip the source back to `CTFTIME`, with no audit row — an admin's fix
+vanished silently. The sync now leaves `MANUAL` rows alone and reports
+`changed=False`, and writes a `result_synced` audit entry when it does act
+(every other mutation was already audited).
+
+**`setup_ctf_resources` could orphan a Discord role.** The role and workspace
+were created back-to-back and persisted only after both succeeded, so a
+workspace failure left a role that nothing recorded — invisible to cleanup,
+and duplicated by the next `/setupctf`. Each object is now checkpointed onto
+the resource row the moment it exists (`_save_resource`), which is what the
+docstring already claimed. `cleanup_after` is still stamped once and never
+extended by a retry.
+
+**Tests no longer require Postgres to run at all.**
+`_migrated_test_database` was `autouse`, so config, CTFTime-client,
+permission, and formatting tests — none of which touch a database — all
+failed with connection errors when Postgres was down. It's now opt-in via
+`_engine`. That exposed a latent trap: `migrations/env.py` ends in
+`asyncio.run()`, which unsets the calling thread's current event loop, and
+with the fixture no longer running first that destroyed pytest-asyncio's
+session loop and broke every async test after it. The upgrade now runs on a
+worker thread. Bot error-handler tests use a new DB-free `offline_bot`
+fixture.
+
+Smaller fixes:
+
+- New `/summary <ctf_id>` — renders a CTF's summary without changing its
+  status. `render_summary` was only reachable through `finish_ctf`, so a
+  `/setcategory` correction made after `/endctf` (the normal order of
+  events) updated the database with no way to see the result.
+- `/setcategory` now refuses `ARCHIVED`/`CANCELLED` CTFs, matching
+  `/editctf`'s existing lock.
+- New `bot/formatting.py`: summaries and `/ctfmembers` output are clamped to
+  Discord's 2000-character limit (fences included), which Discord otherwise
+  rejects outright.
+- `/archivectf` no longer replies to Discord from inside an open
+  transaction.
+- Removed three unreachable `if response is None` branches in the CTFTime
+  client — `_get_with_retries` returns or raises, never `None`.
+
+Deployment hardening:
+
+- Containers run as an unprivileged user instead of root.
+- `restart: unless-stopped` on the bot and Postgres (not on the one-shot
+  migration job).
+- Postgres publishes to `127.0.0.1` only — a bare `5432:5432` on the
+  deployment VM (spec §24) exposed the database to the internet.
+- README documents the deploy path, the commands, and current status
+  (it still described M0 and a `/health` endpoint that no longer exists).
+
 ### M6 — End Summary
 
 - Added `ctf_category_stats` table (migration `0006`): `CTFCategoryStat`

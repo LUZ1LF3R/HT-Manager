@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 import pytest_asyncio
@@ -19,18 +20,32 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def _migrated_test_database() -> None:
     """Run Alembic migrations against TEST_DATABASE_URL once per test session.
+
+    Deliberately *not* autouse: only `_engine` depends on it, so tests that
+    never touch the database (config parsing, the CTFTime client against a
+    mock transport, permission predicates) still run with no Postgres
+    available. Making this autouse meant every test in the suite failed with
+    a connection error when Postgres was down.
 
     migrations/env.py reads DATABASE_URL from the environment directly, so
     it's swapped for the duration of this call rather than threaded through
     alembic's Config.
+
+    That same env.py ends in `asyncio.run(...)`, which unsets the *calling
+    thread's* current event loop when it finishes — including pytest-asyncio's
+    session-scoped loop, which every async test then runs on. Doing the
+    upgrade on its own thread keeps that thread-local damage away from the
+    main thread; `.result()` still re-raises any migration failure. The old
+    autouse ordering hid this by always running before the loop existed.
     """
     previous = os.environ.get("DATABASE_URL")
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
     try:
-        command.upgrade(Config("alembic.ini"), "head")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(command.upgrade, Config("alembic.ini"), "head").result()
     finally:
         if previous is None:
             os.environ.pop("DATABASE_URL", None)
@@ -81,7 +96,8 @@ def settings() -> Settings:
         database_url=TEST_DATABASE_URL,
         ctftime_team_id="999",
         results_channel_id=111,
-        ctf_forum_channel_id=222,
+        ctf_category_id=222,
+        ctf_archive_category_id=333,
         admin_role_ids=[1, 2, 3],
         member_role_id=None,
         bot_log_channel_id=None,
@@ -93,3 +109,11 @@ def bot(settings: Settings, db_session_factory: async_sessionmaker[AsyncSession]
     """A bot instance wired to the test's isolated session factory, for
     tests that need `bot.session_factory` to actually work."""
     return build_bot(settings, db_session_factory)
+
+
+@pytest.fixture
+def offline_bot(settings: Settings) -> HTManagerBot:
+    """A bot whose session factory is never used — for tests about the bot
+    itself (error handling, permissions) that shouldn't need a database just
+    to construct one."""
+    return build_bot(settings, async_sessionmaker())

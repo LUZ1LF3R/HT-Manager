@@ -5,8 +5,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-ht_manager}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ht_manager}
       POSTGRES_DB: ${POSTGRES_DB:-ht_manager}
+    restart: unless-stopped
+    # Bound to loopback on purpose: the bot reaches Postgres over the Compose
+    # network, so the only reason to publish it is local psql/pytest. On the
+    # deployment VM (spec §24) a bare "5432:5432" would expose the database to
+    # the internet.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ht_manager_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,6 +33,9 @@ services:
   ht-manager-bot:
     build: .
     command: python -m ht_manager.main
+    # The bot is a long-running daemon: a Discord disconnect that kills the
+    # process, or a host reboot, should bring it back without a human.
+    restart: unless-stopped
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ht_manager}:${POSTGRES_PASSWORD:-ht_manager}@postgres:5432/${POSTGRES_DB:-ht_manager}
