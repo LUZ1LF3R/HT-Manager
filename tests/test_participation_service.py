@@ -39,6 +39,17 @@ async def test_add_participation_rejects_duplicate(db_session: AsyncSession) -> 
         )
 
 
+async def test_add_participation_rejects_unknown_ctf(db_session: AsyncSession) -> None:
+    """Without this check, the insert falls through to participations'
+    foreign key and raises an unhandled IntegrityError instead of a clean,
+    catchable error — inconsistent with results_service.add_result and
+    summary_service.set_category_stat, which both check this first."""
+    with pytest.raises(participation_service.CTFNotFoundError):
+        await participation_service.add_participation(
+            db_session, actor_discord_id=1, ctf_id=999_999, discord_user_id=100
+        )
+
+
 async def test_record_from_vote_is_idempotent(db_session: AsyncSession) -> None:
     ctf_id = await _make_ctf(db_session)
     await participation_service.record_from_vote(db_session, ctf_id=ctf_id, discord_user_id=100)

@@ -23,7 +23,10 @@ def register_addctfmember_command(bot: Bot) -> None:
                     ctf_id=ctf_id,
                     discord_user_id=member.id,
                 )
-        except participation_service.DuplicateParticipationError as exc:
+        except (
+            participation_service.CTFNotFoundError,
+            participation_service.DuplicateParticipationError,
+        ) as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
 

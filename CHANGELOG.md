@@ -5,6 +5,17 @@ milestone, per `docs/superpowers/specs/2026-08-04-ht-manager-design.md`.
 
 ## [Unreleased]
 
+### Fixed — `/addctfmember` crashed on an unknown CTF ID
+
+`add_participation()` only checked for a *duplicate* participation row, not
+whether the CTF existed — unlike `results_service.add_result` and
+`summary_service.set_category_stat`, which both check this first. A typo'd
+`ctf_id` fell through to `participations`' foreign key and raised an
+unhandled `IntegrityError`, so the admin got a generic "something went
+wrong" instead of a clear "CTF not found." Added the same existence check
+and a new `CTFNotFoundError`, caught by `/addctfmember` alongside the
+existing duplicate check.
+
 ### Fixed — "Cancel Draft" button always failed
 
 `cancel_draft()` deleted the `Poll` row directly, but `poll_options` has no

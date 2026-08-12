@@ -4,7 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ht_manager.db.models.participation import Participation, ParticipationSource
 from ht_manager.db.repositories import audit_log as audit_log_repo
+from ht_manager.db.repositories import ctfs as ctfs_repo
 from ht_manager.db.repositories import participation as participation_repo
+
+
+class CTFNotFoundError(Exception):
+    pass
 
 
 class DuplicateParticipationError(Exception):
@@ -23,6 +28,9 @@ async def add_participation(
     discord_user_id: int,
     source: ParticipationSource = ParticipationSource.MANUAL,
 ) -> Participation:
+    if await ctfs_repo.get(session, ctf_id) is None:
+        raise CTFNotFoundError(f"CTF {ctf_id} not found")
+
     existing = await participation_repo.get(session, ctf_id=ctf_id, discord_user_id=discord_user_id)
     if existing is not None:
         raise DuplicateParticipationError(
